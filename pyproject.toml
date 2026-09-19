@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pystemtc"
 version = "0.1.0"
-description = "PySTEMTC - headless Python-compatible implementation of the STEM v1.3.14 time-course core"
-requires-python = ">=3.10"
+description = "pySTEMTC - headless Python-compatible implementation of the STEM v1.3.14 time-course core"
+requires-python = ">=3.11"
 license = { text = "GPL-3.0" }
 dependencies = [
-    "numpy",
-    "pandas",
+    "numpy>=2.4,<3",  # provisional per round-6 ruling — freeze after 3.11 CI green
+    "pandas>=3.0,<4",  # provisional per round-6 ruling — freeze after 3.11 CI green
 ]
 
 [project.optional-dependencies]

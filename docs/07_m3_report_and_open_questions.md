@@ -1,4 +1,5 @@
 # PySTEMTC M3 结题报告与遗留问题清单（供专家团评审）
+（品牌注记，2026-09-19：品牌自 2026-09-19 起写作 pySTEMTC（py 小写、STEM 大写、tc 小写）；文中 PySTEMTC 为当时记录）
 
 - 日期：2026-09-20
 - 范围：第 5 轮评审门禁的完整执行（c13/c14 金标扩展、git+CI、B 两层冻结、benchmark、两个 P2 修复）→ 四道闸门（pre-work review GO-with-changes / 实现 / post-work review ACCEPT-with-fixes / 修复回填）
@@ -10,7 +11,7 @@
 
 ## 1. 一段话总结
 
-M3 把第 5 轮门禁全部执行完毕：**M2 仅剩的两个未覆盖算法交叉分支（on-the-fly × 缺失 × masked correlation；log 重参照 −Inf/NaN quirk × universe 路径）已被分支针对式金标覆盖，105/105 测试通过，14/14 配置 Compatibility A 字符串级 exact + B 打印值全等**。benchmark 实测显示 V1 无需优化（3 万基因外推分钟级）；git 仓库 + 跨平台 CI + GPL-3.0 LICENSE 就位。**算法层工作到此全部完成，项目站在 M4（发布工程）门口**，剩余问题集中在接口设计与发布流程（§4 M1–M8）。
+M3 把第 5 轮门禁全部执行完毕：**M2 仅剩的两个未覆盖算法交叉分支（on-the-fly × 缺失 × masked correlation；log 重参照 −Inf/NaN quirk × universe 路径）已被分支针对式金标覆盖，105/105 测试通过，14/14 配置 Compatibility A 字符串级 exact + B 打印值全等**。benchmark 实测未给出 V1.0 必须先优化的理由（3 万基因外推分钟级）——第 6 轮修正注记：原文"V1 无需优化"为超出单机实测支撑的表述；git 仓库 + CI workflow 就位（跨平台验证以首次 push 后 CI 绿灯为准）+ GPL-3.0 LICENSE 就位。**算法层工作到此全部完成，项目站在 M4（发布工程）门口**，剩余问题集中在接口设计与发布流程（§4 M1–M8）。
 
 ## 2. 结果总结
 
@@ -19,7 +20,7 @@ M3 把第 5 轮门禁全部执行完毕：**M2 仅剩的两个未覆盖算法交
 | 第 5 轮门禁项 | 状态 | 证据 |
 |----|------|------|
 | c13/c14 重设计 + 生成 + 分支到达断言（N2，原方案被驳回） | 完成 | 4 张新参照表（Java batch 产出）+ 4 断言全过；spec §1.9 钉死 |
-| git + 最小跨平台 CI（N5，升级 P1） | 完成（本地） | 2 提交；`.github/workflows/ci.yml`（Win+Ubuntu × Py3.12/3.14）——push 后生效 |
+| git + 最小跨平台 CI（N5，升级 P1） | 完成（本地） | 2 提交；`.github/workflows/ci.yml`（Win+Ubuntu × Py3.12/3.14）——push 后生效；跨平台验证以首次 push 后 CI 绿灯为准 |
 | Compatibility B 两层冻结（N1） | 完成 | spec §0：B-output canonical exact / B-internal 不得反噬 A / 反冻结声明 |
 | N3 benchmark（只测不优化） | 完成 | §2.3 三档实测 |
 | 两个 P2 修复 | 完成 | `str(rec.id)`；`legacy_with_replacement = mode != "exact"` |
@@ -50,7 +51,7 @@ spots,T,genes,profiles,wall_s,peak_rss_mib
 ```
 
 - 早期粗估（"样例 75s、3 万基因小时级"）**按实测修正为悲观**：10000×10T 全流程 53.5s（≈5.9 ms/幸存基因，3.3× 基因数仅 1.8× 时间）。外推 3 万基因 × 50 置换 × 50 profile ≈ 3 分钟级；× 500 profile ≈ 半小时级。
-- peak RSS 在 10T 两档持平于 ~870 MiB——主导项不是 spot 存储，是 profile 候选/置换缓冲；headless/agent 场景 <1GB 可接受。
+- peak RSS 在 10T 两档持平于 ~870 MiB——主导项不是 spot 存储，是 profile 候选/置换缓冲（第 6 轮修正注记：原文"headless/agent 场景 <1GB 可接受"改为事实陈述，不做可接受性判断）。
 - 局限：单机单次测量无方差；Windows-only（Linux 数字待 CI）。
 
 ### 2.4 工程状态
@@ -61,7 +62,7 @@ git main 两提交（`ca312d8` 基线 → `b2b5a92` M3）；CI workflow 就位�
 
 1. **V1 范围内的算法移植已完成**：模型 profile 生成/精选、并列分配、三条置换路径、显著性三校正、聚类、引擎串联——在 14 配置 × 覆盖矩阵（3 标准化 × 3 校正 × 3 置换路径 × 2 重复模式 × percentile × 缺失 × log quirk）上 Compatibility A 全 exact、B 打印值全等。**在已识别的分支范围内，没有已知的未覆盖交叉分支。**
 2. **浮点纪律与 quirk 复刻经受住了最刁钻路径的考验**：c14 把 ±Inf/NaN 真实注入 Java 的排序/中位数/相关链，Python 的逐行复刻（Arrays.sort 全序 NaN 排最后、vals 掩码不对称、dcorr=NaN 跳过、`Math.sqrt` NaN 语义）与 Java 字符串级一致——这是对 §1.6/§1.7 钉死语义的最强验证。
-3. **性能不是 V1 的风险项**：纯 Python 实现 <1GB 内存、万级基因秒-分钟级完成，"先 golden 后优化"的优化空间留给 V1.x 按需启用。
+3. **当前单机 benchmark 未给出 V1.0 必须先优化的理由**（第 6 轮修正注记：原文"性能不是 V1 的风险项"）：纯 Python 实现 peak RSS ~870 MiB（含 numpy/pandas 导入）、万级基因秒-分钟级完成，"先 golden 后优化"的优化空间留给 V1.x 按需启用。
 4. **兼容性证据链工程化完成**：金标冻结字节受 git `-text` 保护、增量化生成流程带冻结名单守卫、每条 Java 语义有 file:line 钉死——后续任何回归都可被 105 个测试当场抓获。
 5. **诚实的剩余缺口**（不阻塞 M4，但记录在案）：JRE 17 环境（N4）、Linux 平台实测（待 push）、真实大规模数据集（金标仅覆盖样例 + 合成数据）、benchmark 无方差与跨平台数字。
 

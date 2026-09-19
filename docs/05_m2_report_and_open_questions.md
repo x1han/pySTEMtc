@@ -1,4 +1,5 @@
 # PySTEMTC M2 结题报告与遗留问题清单（供专家团评审）
+（品牌注记，2026-09-19：品牌自 2026-09-19 起写作 pySTEMTC（py 小写、STEM 大写、tc 小写）；文中 PySTEMTC 为当时记录）
 
 - 日期：2026-09-19
 - 范围：第 3 轮 4 个前置 P1 → M2 实现（profiles→assign→permutation→significance→clustering→engine）→ 四道闸门（pre-work review / implementer / 独立 verifier / post-review）→ findings 修复 → 第 4 轮命名定案 → 项目目录更名迁移

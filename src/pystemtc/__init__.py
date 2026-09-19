@@ -1,6 +1,6 @@
-"""PySTEMTC: a headless Python port of STEM (Short Time-series Expression Miner).
+"""pySTEMTC: a headless Python port of STEM (Short Time-series Expression Miner).
 
-PySTEMTC is a derivative work of STEM v1.3.14 (Java), authored by Jason Ernst,
+pySTEMTC is a derivative work of STEM v1.3.14 (Java), authored by Jason Ernst,
 Dima Patek and Ziv Bar-Joseph (https://ernstlab.github.io/STEM/).  The original
 STEM is licensed under GPL-3.0; this port is therefore distributed under the
 GNU General Public License v3.0 as well.

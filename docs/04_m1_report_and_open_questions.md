@@ -1,4 +1,5 @@
 # STEMpy M1 结题报告与遗留问题清单（供专家团评审）
+（品牌注记，2026-09-19：品牌自 2026-09-19 起写作 pySTEMTC（py 小写、STEM 大写、tc 小写）；文中 PySTEMTC 为当时记录）
 
 > 命名迁移注记（第 4 轮，2026-09-19）：项目正式定名 **PySTEMTC**（PyPI/import/CLI = `pystemtc`）。本文为 M1 阶段历史记录，保留当时"STEMpy"称谓；现行命名与最高原则以 `03_v1_implementation_spec.md` §0 为准。
 

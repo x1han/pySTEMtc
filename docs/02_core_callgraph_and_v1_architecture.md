@@ -1,4 +1,5 @@
 # STEM v1.3.14 核心计算链调用图 与 PySTEMTC V1 架构设计
+（品牌注记，2026-09-19：品牌自 2026-09-19 起写作 pySTEMTC（py 小写、STEM 大写、tc 小写）；文中 PySTEMTC 为当时记录）
 
 - 日期：2026-09-19
 - 证据基础：`D:\stem\sourcecode`（edu/cmu/cs/sb/{stem,core}）。所有 file:line 均可直接回溯。

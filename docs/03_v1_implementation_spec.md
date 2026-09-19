@@ -10,6 +10,7 @@
 ## 0. 冷冻区（frozen，不得再议）
 
 - **命名（第 4 轮定案，2026-09-19）**：品牌/项目 **PySTEMTC**；PyPI distribution、import namespace、CLI 统一 **`pystemtc`**。PyPI JSON API 实证 404 未被占用（2026-09-19；另 `stempy` = Kitware 4D-STEM 数据包 v3.5.0、`pystem` = 显微 STEM 成像包，均确定被占，来自专家检索 + `stempy` 已独立复核）。**发布前必须再走一次 PyPI 实时接口确认，不能把"检索不到"当成占坑成功**。仓库目录 2026-09-19 起为 `D:\stem\pySTEMtc`（用户主动由 `D:\stem\STEMpy` 更名，详见 §1.8）；c09/c10/c11 fixture 配置内嵌 `STEMpy/tests/...` 生成期路径，属冻结证据，**配置内容不改**，解析由 `test_golden.py::_resolve` 的 basename 兜底维护。
+  - **第 6 轮 dated 修订（2026-09-19，品牌大小写铁律）**：品牌自本注记起写作 **pySTEMTC**（py 小写、STEM 大写、tc 小写）。上文及历史文档中的 "PySTEMTC" 为当时记录，不作追溯改写。PyPI distribution / import namespace / CLI **`pystemtc`（全小写）不变**，且不参与品牌大小写规则——新写代码 docstring、文档标题与发布物料一律用 pySTEMTC。
 - 许可证 **GPL-3.0**（衍生自 GPLv3 的 STEM，源码头保留 Ernst/Patek/Bar-Joseph 归属）。
 - **最高原则（Compatibility First，第 4 轮冻结）**：PySTEMTC 首先是 **Java STEM v1.3.14 time-course 计算核心的 headless Python 兼容实现**，而不是一个重新设计的 time-course 算法包。本地 STEM v1.3.14 是唯一行为 oracle；所有设计争议先问"Java v1.3.14 到底怎么做"，不问"Python 里通常怎么做"。
 - **优先级链**：Java v1.3.14 行为一致性 > 代码简洁 > 运行速度 > Pythonic 写法。
@@ -26,6 +27,9 @@
   - **C 文件输出**：Java/Python 的 genetable、profiletable 除明确允许的浮点末位外逐字段一致（实现物 = M4 `write_java_tables`，tab 分隔复刻 batch 两表；**不占用 `to_csv` 名称**——那留给未来 Pythonic CSV 导出，两件事不混。截至 M2 已达成 A 全 exact + B 打印值全等）。
   - 延续映射：旧 Level A ≈ A（含 observed tally）；旧 Level B ≈ B。
 - **M2 正式 GO（第 5 轮门禁结论，2026-09-19）**。M3 范围锁定：c13/c14 金标扩展（§1.9）→ git+CI → benchmark（只测不优化）→ 其余收尾；**不扩大范围、不做新功能**。
+- **writer 字符集裁决（第 6 轮冻结，Compatibility C 的 writer 轮定义）**：C 层"逐字段一致"按**解码后字段**判定（decoded-table-field exact）；字节级 exact 仅在**显式 pin 字符集与行分隔符**时承诺；默认跟随**运行平台默认字符集**（镜像 Java 行为）并提供 `encoding=` 参数（实现于 writer 轮）。∞（U+221E）/−∞/U+FFFD 的渲染形式无条件复刻（§1.7）。
+- **CLI 裁决（第 6 轮冻结）**：退出码 `0` 成功 / `1` 运行失败 / `2` 用法错误；`batch` 模式单配置失败**继续**处理其余配置，结束时以 stderr 汇总失败清单；stdout 保持**简洁成功摘要**（行数级镜像 Java batch，不做逐 gene 噪声输出）。
+- **M5 warning 冻结原文（第 6 轮冻结；第 5 轮 N9 定组合、第 6 轮定文案）**：仅 `none_add0 × permute_t0=True` 组合弹运行时 warning，**只 warn 一次**，文案冻结为："`normalize='none_add0'` with `permute_t0=True` permutes the synthetic zero baseline together with observed time points, matching legacy STEM v1.3.14 behavior. Interpret permutation-based significance with caution." legacy 有放回置换不逐次警告，由 metadata（`legacy_with_replacement`/`permutation_mode`）+ 文档承载；warning 只说明风险，不改计算结果。
 
 ## 1. 常温区（pinned this round）
 
@@ -61,7 +65,7 @@
 **复刻要点清单（预审补充，全部有源码依据）**：
 1. RNG 向量文件不记录 `nextInt` 的 bound（=1000，见 `tools/gen_java_rng.js`），测试需硬编码。
 2. genetable 值格式 = Java `NumberFormat(Locale.ENGLISH)`、min=max 小数位 2（HALF_EVEN 舍入、|v|≥1000 千分位分组、微小负数输出 `-0.00`）；集成测试按**字符串级**比对。
-3. genetable 最后一列**无条件输出**（缺失单元格在最后一列不输出空串，ST.java:3021-3033）——M4 `to_csv` 时注意。
+3. genetable 最后一列**无条件输出**（缺失单元格在最后一列不输出空串，ST.java:3021-3033）——M4 `write_java_tables` 时注意。
 4. 重复相关性过滤：对 **(R+1)·R/2 对（含主文件 vs 重复）** 等权平均、严格 `>` 阈值、掩码=双方 pma 非零、方差 0 或无重叠 → 0（DataSetCore.java:850-879，Util.java:481-526）。
 5. 重复文件必须与主文件原始行对齐（errorcheck，ST.java:2365-2402）；DataFrame 输入的重复/空白 spot 名按 dataio 同规则抛错（DataSetCore.java:429-452）。
 6. 阈值过滤两种变体均扫描列 1..T−1 并用 `≥`，max−min 变体的 dmax/dmin 初始化为 0（DataSetCore.java:983-1038）；log 模式 ≤0 只清 pma、保留解析值（:530-536）。
@@ -185,6 +189,11 @@ cluster_profiles(sig, models, thr, percentile_thr) -> clusters   # 贪心球：�
 - `_stats.correlation` 的 `math.sqrt` 已改为 Java 语义（负输入 → NaN 而非异常，Util.java:468/522）——M2 post-review MAJOR 修复，M1 遗留问题。
 - 第 5 轮评审发现的 2 个 P2（M3 修复，2026-09-19）：①`test_golden.py` 的 Profile ID 断言实为 `str(i)`（枚举索引）而非 `str(rec.id)`——engine 现恰好 `ProfileRecord(id=i)` 故 M2 结论不受影响，但字段此前未被测试保护，已改为 `str(rec.id)`。②`legacy_with_replacement` 原仅 `subsample_universe` 为 true——`on_the_fly` 同为跨置换可重复的有放回抽样，语义改为 `mode != "exact"`（exact/subsample_universe/on_the_fly → false/true/true），并同步 permutation.py docstring。
 - **M3 c14 挖出的新输出 quirk（2026-09-19，jjs + 文件字节双重实证）**：genetable 数值列的 `NumberFormat`（DecimalFormatSymbols 文档默认）——`+Inf` → `∞`（U+221E）、`-Inf` → `-∞`、`NaN` → U+FFFD（M2 既有钉死，长度 1）。Java 以**平台默认字符集**写表（oracle 机 = GBK），c14 冻结参照表中 `-∞` 为字节 `2D A1 DE`；金标 reader 因此以 GBK 确定性解码（ASCII 表两种解码等价）。`write_java_tables`（M4，Compatibility C）必须复刻 ∞/U+FFFD 形式并按运行平台默认字符集写文件。
+- **P1 数据保真修复（第 6 轮，2026-09-19）：`filtering.merge_repeats` 无重复直通**。根因：Java 在**无重复数据集时不调用 mergeDataSets**——different_periods 直接 `theDataSetsMerged = theDataSet1`（ST.java:2577），same_period 的 else 分支是 `new STEM_DataSet(theDataSet1, theDataSet1)`（ST.java:2669，两参构造为纯引用别名包装、零语义）；而 Python `build_stem_dataset`（dataset.py，两种模式各一处，:146/:182 一带）无条件调用 `merge_repeats(...)`，`_cellwise_median` 的 `np.zeros` 初始化把 all-missing 格的存储 payload（log 模式 −Inf/NaN、normalize 模式 `0.0−v0` 填充值）清成幻影 `0.0`。修复 = `merge_repeats` 函数体首行 `if not repeats: return main`（两模式共用）+ docstring 记录两处 ST.java 行号。
+  - **发现路径**：c13 幸存基因中缺末列者恰 **27 行**，`GENE_0008 values[-1]` 应为 `0.0−(−0.948)=0.948`（normalize 填充值）却落成 `0.0`；c14 单 spot 组 `S_0003/S_0015/S_0027/S_0039` 的 `values[-1]==-Inf` 同被零化。修复前红证据：`S_0003: values[-1]=0.0`、`GENE_0008: values[-1]=0.0`。
+  - **安全性论证（下游四点）**：① `_normalized` 的 `log_ratio` 以 `copy=True` 产出新数组，直通无别名突变风险；② `merge_duplicates` 只读输入；③ 置换重参照消费 `ds.spot_data`（直通后位等不变——有重复路径本就原样引用 `main.spot_data`）；④ assign/filter_threshold 均按 pma 掩码读取。回归后 c01–c07/c12（有重复配置）gene_data 逐位不变，14 配置金标全绿。
+  - **偏离专家字面设计（"只补一条保真通道"）的理由**：`return main` 让 Python 矩阵与 Java 本身对齐（同一引用语义，而非再造一份"保真合并矩阵"），并消除"合并矩阵"与"主矩阵"两份真相的同步负担——Java 的无重复路径本就是零语义别名，直通是最忠实的复刻。
+  - 回归保护：`tests/test_golden_branches.py` 两条 payload 断言（c14/c13 锚点）+ `tests/test_units.py` 三条直通契约（`is main`、all-missing 保留 primary 值、无突变；**无 oracle，钉契约**，docstring 已注明）。
 
 ## 1.8 命名迁移记录（第 4 轮）
 
@@ -223,18 +232,68 @@ cluster_profiles(sig, models, thr, percentile_thr) -> clusters   # 贪心球：�
 - Data_File 前缀约定：新配置写当前目录名 `pySTEMtc/tests/golden/data/...`；冻结 c09/c10/c11 的 `STEMpy/` 前缀保留为证据（HANDOFF D8）。
 - 测试侧分支到达断言（`tests/test_golden_branches.py`，评审要求：不能只靠"测试通过"）：c13 断言 `permutation_mode=="on_the_fly"` 且 ≥10 个幸存基因的基因级序列含 ≥1 个非 t0 缺失；c14 断言 `permutation_mode=="subsample_universe"` 且组 1、组 2 各 ≥10 个幸存 dup 基因（spot 级在索引 2 缺失）。
 
-## 2. 解冻区（unfrozen，M2 首批对拍后定稿）
+## 1.10 M4 schema v2 与发布工程（第 6 轮定案，2026-09-19）
 
-1. **Level B 容差数值**（暂定：expected 相对 1e-12；p-value 相对 1e-9 或绝对 1e-12；correlation 相对 1e-12）——B 已冻结为两层（§0），容差条款降级为 B-internal 兜底，不再作为主判据。
+### to_dict schema v2 全字段表（实现：`src/pystemtc/result.py` + `engine.py`）
+
+顶层键**恰为** 11 个：`schema_version`、`reference`、`generator`、`config`、`input`、`metadata`、`profiles`、`gene_assignments`、`filtered_genes`、`clusters`、`timing`。
+
+| 顶层键 | 内容 |
+|---|---|
+| `schema_version` | `2` |
+| `reference` | `{"software": "STEM", "version": "1.3.14"}`（行为 oracle，与 package 版本解耦） |
+| `generator` | `{"package": "pystemtc", "version": <pystemtc.__version__>}`（package 名全小写，不参与品牌大小写） |
+| `config` | **显式列举**的 STEMConfig 算法参数键（`result.CONFIG_ALGORITHM_KEYS` = STEMConfig 全部字段 − `data_file`/`repeat_files`；不用 asdict 剔除法——新增配置字段必须是一次显式 schema 决策） |
+| `input` | `{"form": "path"\|"dataframe"\|"stem_dataset"`, `data_file`, `repeat_files`, `time_points(= ds.sample_labels)`}；STEMDataset 直注入形态 `data_file=None, repeat_files=[]`（该路径忽略 replicates 参数，engine docstring 已注明）；DataFrame 形态 `repeat_files=[None×n]` |
+| `metadata` | `input_form`、`num_genes`、`num_time_points`、`num_profiles`、`num_candidate_profiles`、`permutation_mode`、`n_permutations_requested`、`legacy_with_replacement`、`sample_labels`、`timestamp`（fit 时一次，UTC ISO-8601 秒级）；**删除** `software`/`reference` 两键（职责上移 `reference`/`generator`） |
+| `profiles` | 原样（id/model/cluster/n_assigned/n_expected/p_value/significant） |
+| `gene_assignments` | `{gene, probe, profile_ids: list[int], values, value_states, present}`；旧 `profile` 字符串字段由 `profile_ids` 列表取代 |
+| `filtered_genes` | `[{gene, probe, reason}]`（reason ∈ repeat_correlation/missing/threshold；无 Java 对应物，不进 `write_java_tables`） |
+| `clusters` | `[{"id": i, "profile_ids": [...]}]`（i = 生成序） |
+| `timing` | 引擎 stage 计时 dict（键表见下） |
+
+### `_encode_value(value, present)` 真值表（钉死优先级：先按存储 double 分类）
+
+| 存储 double | state | values |
+|---|---|---|
+| NaN（任意 pma） | `"nan"` | `null` |
+| +Inf（任意 pma） | `"positive_infinity"` | `null` |
+| −Inf（任意 pma） | `"negative_infinity"` | `null` |
+| 有限 & pma==0 | `"missing"` | 保留填充值 |
+| 有限 & pma!=0 | `"finite"` | 原值 |
+
+不变量：`values[i] is null ⟺ state ∈ {nan, positive_infinity, negative_infinity}`；`state=="missing" ⟹ present==False`、`present==True ⟹ state=="finite"`。注意非有限 payload 落在 all-missing 格（present=False）时 state 报**非有限态**而非 missing——c14 的 `present=False ∧ −Inf` 是实证（S_0003 末列）。**`values` 是无损 Java 矩阵快照，writer（未来）消费 STEMResult 内部 floats**：由 (value, state, present) 足以精确重建 Java genetable 任意格（含 `""` 判别、`-0.00` 与 ∞/U+FFFD 渲染）。严格 JSON：`json.dumps(to_dict, allow_nan=False)` 必须成功（测试钉死）。
+
+### timing 键表（`time.perf_counter` 纯环绕现有阶段，不改任何计算顺序）
+
+`input_read`（主 + 重复读取）→ `normalize_filter`（`build_stem_dataset` 全链）→ `profile_generation` → `assignment`（含 tallyassignments）→ `permutation`（expected_counts）→ `significance`（p 值 + 校正）→ `clustering` → `wall`（fit 全程）；STEMDataset 直注入路径前两键报 `0.0`。
+
+### 版本矩阵定案
+
+`requires-python = ">=3.11"`；CI matrix 3.11/3.12/3.14（Windows+Ubuntu）；依赖下界 `numpy>=2.4,<3`、`pandas>=3.0,<4` 为 **provisional**（冻结条件 = 3.11 CI 绿，即 M6 push 之后）。
+
+### 发布文案模板
+
+> "Compatibility-first implementation. The V1.0 core intentionally favors behavioral fidelity over vectorized performance." + 实测数字（`tools/bench.py` 三档：300×6T 0.3s / 3000×10T 29.3s / 10000×10T 53.5s wall；peak RSS ~870 MiB）。**870 MiB 不得称轻量**。
+
+### format_java_double 晋升
+
+现居 `tests/test_integration_fixture.py` 的 `NumberFormat` 复刻（ENGLISH、2 位小数 HALF_EVEN、千分位、NaN→U+FFFD、±Inf→±∞）在 **writer 轮**晋升 `src/pystemtc/javaformat.py`（`write_java_tables` 的格式化内核），测试改为 import，行为不变。
+
+
+## 2. 解冻区（unfrozen，按第 6 轮专家裁决重整，2026-09-19）
+
+1. ~~**Level B 容差数值**（暂定：expected 相对 1e-12；p-value 相对 1e-9 或绝对 1e-12；correlation 相对 1e-12）~~——**第 6 轮划除**：容差数值条款被第 5 轮 B 两层冻结（§0）取代；B-internal 不设数值容差判据（B-output 打印值全等为主判据，B-internal 只要求不得反噬 A 层）。
 2. ~~金标最终严格度~~ **已于第 5 轮定案并移回冷冻区**：B 两层定义（B-output exact / B-internal 不得反噬 A），见 §0。
 3. `STEMInput.from_gene_matrix(...)` 便利构造器（V1.1；不得污染 compatibility core）。
 4. 裸 `ndarray` 入口（V1.1+，需自带 schema 参数）。
 5. K-means（V1.1，`Random(2211)` + reservoir sampling 复刻）。
 6. ~~PyPI distribution 名与 import namespace~~ **已于第 4 轮定案并移回冷冻区**：`pystemtc`（PyPI API 404 实证 2026-09-19）；发布前复检要求已写入 §0。
-7. **JRE 17 漂移 characterization**：**阻塞——本机仅有 JRE 1.8.0_451，无 JRE 17**；待用户安装后执行（结果只作附加证据，JRE 8 仍是唯一 oracle）。**warning 策略（第 5 轮定案）**：仅 `none_add0 × permute_t0=True` 组合弹运行时 warning；legacy 有放回置换**不**逐次警告，由 metadata（`legacy_with_replacement`/`permutation_mode`）+ 文档承载；warning 只说明风险，不改计算结果。
-8. **CLI（第 5 轮定向，M4）**：`pystemtc run --config <defaults.txt> --output <dir>` 与 `pystemtc batch --config-dir <dir> --output <dir>` 双入口；defaults.txt 保持一等输入；不复刻 `stem.jar -b` 的历史参数形式。
-9. **`to_dict()` schema（第 5 轮升级 P2；M4 实现【前】送专家评审）**：须定义 `schema_version`、`reference_version="STEM 1.3.14"`、非有限数编码——倾向 JSON 层规范化为 `null`（严格 JSON 不接受 NaN/Infinity 字面量；c13/c14 将产生 ±Inf/NaN 中间量，此项更必要），在场性由既有 mask/status 字段表达，不依赖非标准 `NaN` 字面量。
-10. **Python 版本矩阵（第 5 轮 P2，发布前必须解决）**：`requires-python>=3.10` 但只在 3.14.3 实测；依赖下限需复核——专家引用 PyPI：numpy 2.4.6 本身要求 Python ≥3.11（M4 定版本下限时以 PyPI 实测为准）。
+7. **JRE 17 漂移 characterization**：**阻塞——本机仅有 JRE 1.8.0_451，无 JRE 17**；待用户安装后执行（结果只作附加证据，JRE 8 仍是唯一 oracle）。warning 策略已定案，**文案冻结原文移入 §0**（M5 warning 冻结），本条只保留 JRE 17 环境阻塞本身。
+8. **CLI（第 5 轮定向，M4）**：`pystemtc run --config <defaults.txt> --output <dir>` 与 `pystemtc batch --config-dir <dir> --output <dir>` 双入口；defaults.txt 保持一等输入；不复刻 `stem.jar -b` 的历史参数形式。**裁决（退出码 0/1/2、batch 失败继续 + stderr 总结、stdout 简洁成功）已落 §0，实现于下一轮（CLI 轮）**。
+9. **`to_dict()` schema**：**v2 已实现（第 6 轮，全字段表见 §1.10），待 post-review 最终确认**；v1 提案（schema_version=1、`reference_version` 字符串、仅 null 编码）被 v2 取代（`reference` 对象、`value_states` 五态、`profile_ids`、`input`/`timing` 段）。
+10. **Python 版本矩阵**：**requires-python 已定 3.11**（第 6 轮，CI matrix 3.11/3.12/3.14）；**依赖下界 provisional**（`numpy>=2.4,<3`、`pandas>=3.0,<4`），冻结条件 = 3.11 CI 绿（M6 push 后）。
+11. **Compatibility C 数据保真**：数据通道已修复（P1，§1.7：无重复直通 + all-missing payload 保留），`write_java_tables` 的 writer 实现待下一轮；本条在 writer 实现获认可后关闭。
 
 ## 3. 工件与再生成
 

@@ -1,4 +1,4 @@
-# PySTEMTC — Session Handoff
+# pySTEMTC — Session Handoff
 
 > 按 dictionary-of-ai-coding 的 Handoff 定义编写：本文件把一个会话的上下文移交给下一个会话，**没有回路**。
 > 评判标准：一个**零上下文**的新会话拿这份文件应当能 (1) 理解项目是什么、(2) 跑通验证、(3) 不重新翻案已定决策（每条决策都写了为什么）、(4) 知道下一步做什么、(5) 知道什么不能碰。
@@ -8,7 +8,7 @@
 
 ## 1. 这个项目是什么（一段话）
 
-**PySTEMTC**（PyPI/import/CLI = `pystemtc`）是 Java 工具 **STEM v1.3.14**（Short Time-series Expression Miner，Ernst/Patek/Bar-Joseph，GPL-3.0，针对 ~≤8 时间点的时序基因表达聚类）的 **headless Python 兼容实现**——只移植 time-course 计算核心，不做 GO 富集、GUI、绘图、双条件比较。
+**pySTEMTC**（品牌大小写铁律第 6 轮定案：py 小写、STEM 大写、tc 小写，见 D12 与 spec §0 dated 修订注记；PyPI/import/CLI = `pystemtc` 全小写不变）是 Java 工具 **STEM v1.3.14**（Short Time-series Expression Miner，Ernst/Patek/Bar-Joseph，GPL-3.0，针对 ~≤8 时间点的时序基因表达聚类）的 **headless Python 兼容实现**——只移植 time-course 计算核心，不做 GO 富集、GUI、绘图、双条件比较。
 
 **最高原则（Compatibility First，冻结）**：本地 STEM v1.3.14 是**唯一行为 oracle**。这不是"受 STEM 启发的重设计算法包"；所有设计争议先问"Java v1.3.14 怎么做"，不问"Python 里通常怎么做"。优先级链：**Java 行为一致性 > 代码简洁 > 运行速度 > Pythonic**。
 
@@ -29,8 +29,9 @@
 - 验证命令（当前全绿）：
   ```bash
   cd /d/stem/pySTEMtc
-  python -m pytest -q          # 96 passed（52 M1 + 20 M2 单测 + 24 金标）
+  python -m pytest -q          # 136 passed（第 6 轮：105 基线 + 2 payload 回归 + 4 直通契约 + 14 金标值列 + 11 schema）
   grep -rnE "np\.(sum|mean|std|dot|corrcoef|add\.reduce|einsum)\(" src/pystemtc/   # 必须为空
+  grep -rn "PySTEMTC" src/ pyproject.toml   # 必须为空（品牌铁律 D12；docs 历史注记除外）
   ```
 - 金标重生成（需要 JRE 8，Windows 有显示环境即可）：`python pySTEMtc/tools/gen_fixtures.py`（在 `D:/stem` 下运行）→ `tests/golden/`（12 配置 batch + 24 张表 + RNG/StatUtil 向量）。**fixtures 是冻结证据，不许编辑**（c09/c10/c11 的历史路径前缀见 §5-D8）；CI 不依赖 Java。
 
@@ -41,6 +42,7 @@
 - 闸门流程（每里程碑）：预审 → implementer → 独立 verifier → post-review → 主会话修 findings。M1/M2 均走完，verifier 均独立复跑并 ALL GREEN。
 - **明确不外推**：GO/enrichment、双条件比较、K-means、绘图、`to_csv` 未实现；金标仅覆盖本地样例与合成数据；大规模性能未评估。
 - **第 5 轮裁决（2026-09-19）：M2 正式 GO**。N1-N12 处置见 docs/05 §7；Compatibility B 冻结为两层定义（spec §0）；c13/c14 金标扩展设计钉死（spec §1.9）；git+CI 建立并基线提交；LICENSE（GPL-3.0）落库。JRE 17 characterization **阻塞**（本机无 JRE 17）。
+- **第 6 轮（2026-09-19）：M3 PASS；M4 GO-with-one-blocker（P1 数据保真缺陷）→ 本轮已解除**。P1 = 无重复数据集时 `merge_repeats` 零化 all-missing payload（根因与修复见 D13/spec §1.7）。本轮同时落地：全字段值列金标（14 配置逐格）、to_dict schema v2 + stage timing（D14/spec §1.10）、品牌铁律（D12）、benchmark 目录纪律（D15）、版本矩阵定案（requires-python 3.11 + CI 3.11/3.12/3.14 + provisional 依赖下界）。
 
 ## 5. 已冻结的决策（不要重新翻案；每条带为什么）
 
@@ -55,6 +57,10 @@
 - **D9 异常类名 `STEMTCValueError`**（非 PySTEMTCValueError）。为什么：可读性取舍，已记录于 03 §1.8。
 - **D10 V1 范围**：不做 GO/enrichment、annotation、chromosome/GFF、双条件比较、GUI、plotting、K-means（K-means 在 V1.1，seed 2211 + reservoir sampling 复刻）。输入只收**原始表达值**、行=spot；不接受预标准化矩阵、不提供裸 ndarray 入口。
 - **D11 Java 源码 > 论文/手册；本地 v1.3.14 > GitHub master**。为什么：行为 oracle 是本地 jar+源码；论文与手册是描述，不是实现。
+- **D12 品牌大小写铁律（第 6 轮，2026-09-19）**：品牌写作 **pySTEMTC**（py 小写、STEM 大写、tc 小写）；PyPI/import/CLI `pystemtc` 全小写**不变**、不参与大小写规则。为什么：第 6 轮专家团定案（spec §0 dated 修订注记）；历史文档中的 PySTEMTC 为当时记录，不追溯改写，只在文档标题下加 dated 注记。新写 docstring/文档/发布物料一律 pySTEMTC。
+- **D13 P1 数据保真修复（第 6 轮）**：`filtering.merge_repeats` 函数体首行 `if not repeats: return main`（两模式共用）。为什么：Java 无重复数据集时**不调用** mergeDataSets（ST.java:2577 `theDataSetsMerged = theDataSet1`；:2669 两参构造是纯引用别名、零语义）；Python 的零初始化合并曾把 all-missing 格 payload（−Inf/NaN/填充值）清成幻影 0.0（c14 四个单 spot 基因 + c13 GENE_0008、缺末列恰 27 行实证）。安全性四点论证见 spec §1.7；专家字面设计"只补保真通道"被否——直通使矩阵对齐 Java 本身并消除双份真相。**不要"优化"掉这个直通，也不要给无重复路径恢复任何合并调用**。
+- **D14 to_dict schema v2 定案（第 6 轮，待 post-review 最终确认）**：顶层恰 11 键；`_encode_value` 五态真值表（先按存储 double 分类，再按 pma 分有限支）；`profile_ids: list[int]` 取代 `profile` 字符串；新增 `input`（form/data_file/repeat_files/time_points）与 `timing` 段；metadata 删 software/reference、增 timestamp/sample_labels。为什么：agent 消费接口需要无损、严格 JSON（allow_nan=False 必须成功）、稳定形状；全字段表见 spec §1.10。`values` 是无损 Java 矩阵快照，writer 消费 STEMResult 内部 floats。
+- **D15 benchmark 目录纪律（第 6 轮）**：`tests/golden/` 管**验收**（算得对不对），`benchmarks/` 管**记录**（算得多快）；两者互不 import、互不读取对方文件。任何优化必须**先 golden（全量通过）→ 优化 → 再全量 golden**；benchmark 数字只辅助决策，永不替代 golden 判据。`tools/bench.py` = M3 一次性证据（冻结不动）；`benchmarks/benchmark_core.py` = 可复跑 harness（核心组 B1-B6 + `--sweep`/`--reps`，结果落 `benchmarks/results/`）。
 
 ## 6. 关键路径速查（file:line 级证据都在 02/03 文档里）
 
@@ -65,10 +71,11 @@
 
 ## 7. 下一步（按序；验收判据已写明）
 
-1. **M3 验证收尾（第 5 轮裁决顺序）**：① c13/c14 金标扩展（spec §1.9 钉死设计；`gen_fixtures.py --fixtures` 增量 + 单配置 `stem.jar -b`，禁止整目录重跑）；② git + 最小跨平台 CI（**已完成**，Windows+Ubuntu matrix + 浮点纪律 AST 测试）；③ B 两层冻结（**已完成**，spec §0）；④ N3 benchmark 三档（只测不优化，`tools/bench.py`）；⑤ JRE 17 characterization（**阻塞**：本机无 JRE 17，待安装）。
-2. **M4 发布工程**：`pystemtc run`+`batch` CLI（N6）；`write_java_tables`（N7，不叫 to_csv）；`to_dict` schema **实现前送审**（N8：schema_version/reference_version/非有限值→null）；metadata timestamp；warning 仅 `none_add0×permute_t0=True`（N9）；Python 版本矩阵（N10，注意 numpy 2.4.6 要求 ≥3.11）；PyPI 实时复检后以 `pystemtc` 发布。
-3. **V1.1**：K-means（`Random(2211)` + reservoir sampling）、plot adapter、`STEMInput.from_gene_matrix` 便利构造器。
-4. 每步继续既有闸门流程（预审→实现→独立验证→post-review）。
+1. **第 6 轮已执行（2026-09-19）**：P1 数据保真修复（先红后绿，D13）；全字段值列金标 `test_golden_genetable_values`（14 配置逐格）；to_dict schema v2 + stage timing（D14/spec §1.10）；requires-python 3.11 + CI matrix 3.11/3.12/3.14 + provisional 依赖下界；品牌铁律落盘（D12）+ 清扫；`benchmarks/benchmark_core.py` 可复跑 harness（专家网格 B1-B6 已全跑，记录 = `benchmarks/results/20260919T181249Z/`，B6 peak RSS 872.5 MiB 与 M3 冻结证据 ~870 MiB 互证）。verifier 10/10 PASS + post-review APPROVE（1 P2 已修：benchmark scratch 文件名带 seed，防止换 seed 后记录标错数据；3 P3 已修/记录：HANDOFF 标题品牌、`_NON_FINITE_STATES` 死常量删除、merge_repeats 模式校验提升到直通分支之前 + 新测试）。**遗留品牌点（冻结文件，须专家批准后清扫）**：`tests/golden/README.md:3` 与 `tools/gen_fixtures.py:1` 文档字符串仍是 PySTEMTC——内容字节不受影响，纳入下一轮解冻清单。
+2. **M4 发布工程（顺序）**：① `write_java_tables`（Compatibility C：∞/U+FFFD 渲染 + 平台默认字符集 + `encoding=` 参数，writer 裁决见 §0；`format_java_double` 从 `tests/test_integration_fixture.py` 晋升 `src/pystemtc/javaformat.py`；数据通道已就绪——消费 STEMResult 内部 floats，§1.10）；② CLI `run`+`batch`（§0 裁决：退出码 0/1/2、batch 失败继续 + stderr 总结、stdout 简洁成功；M5 warning 文案已冻结 §0，只 warn 一次）；③ **依赖下界冻结条件 = 3.11 CI 绿 = M6 push 之后**（此前保持 provisional）；④ PyPI `pystemtc` 实时复检后发布（发布文案模板见 §1.10，870 MiB 不得称轻量）。
+3. **阻塞项（待用户）**：N4 JRE 17 characterization（本机无 JRE 17，待用户安装任意发行版）；M6 push（待用户提供 GitHub 仓库，首次 CI 绿灯 = Linux 侧 A-exact 证据闭环）。M8：V1.0 带"未优化声明"发布（性能数字以 `benchmarks/results/` 最新一次为准，声明模板见 spec §1.10）。
+4. **V1.1**：K-means（`Random(2211)` + reservoir sampling）、plot adapter、`STEMInput.from_gene_matrix` 便利构造器。
+5. 每步继续既有闸门流程（预审→实现→独立验证→post-review）。
 
 ## 8. 新会话的红线（容易踩的坑）
 
@@ -76,18 +83,18 @@
 2. 不"修"任何 D6 所列 quirk；看到"Java 的行为在统计上不合理"时，先查 03 §1.6——大概率已记录且有意复刻。
 3. 不在 `src/pystemtc/` 数值路径引入被禁的 numpy 规约（见 §3 的 grep）。
 4. 不用 `stempy`/`STEMpy` 命名任何新代码或目录（历史文档与冻结 fixture 配置中的称谓除外，见 D8）。
-5. 不因为测试慢就把金标断言改成容差或抽样——96 个测试里 24 个金标测试是本项目的存在理由。
+5. 不因为测试慢就把金标断言改成容差或抽样——136 个测试里 42 个金标测试是本项目的存在理由。
 6. 不实现 D10 范围外的功能，即使"顺手"。
 7. 引用 Java 行为时给 file:line；引用测试结果时跑一遍再写。旧会话的结论若与磁盘现状冲突，以磁盘为准。
 
 ## 9. 一页速览
 
 ```text
-项目     PySTEMTC (pystemtc) — STEM v1.3.14 time-course 核心的 Python 兼容实现
-状态     M2 GO（第5轮）；M3 进行中：105/105 测试；14 金标配置 A exact + B 两层定义
+项目     pySTEMTC (pystemtc) — STEM v1.3.14 time-course 核心的 Python 兼容实现
+状态     M3 PASS（第6轮）；M4 进行中：136/136 测试；14 金标 A exact + B 打印值全等 + 全字段值列逐格
 oracle   D:\stem\stem.jar + D:\stem\sourcecode (v1.3.14, JRE 1.8.0_451)
-代码     D:\stem\pySTEMtc（git 仓库，main 分支）  规范 docs/03（§1.9=c13/c14 设计）
+代码     D:\stem\pySTEMtc（git 仓库，main 分支）  规范 docs/03（§1.7=P1 修复，§1.10=schema v2/发布工程）
 验证     cd /d/stem/pySTEMtc && python -m pytest -q
-下一步   M3 收尾 (benchmark→N4 JRE17阻塞) → M4 (CLI/write_java_tables/schema/发布) → V1.1
-红线     不修 quirk、不碰冻结 fixtures、不换浮点顺序、不做范围外功能、禁宣称全平台逐位一致
+下一步   M4: write_java_tables → CLI → push+CI 绿（M6）→ 依赖下界冻结 → PyPI 复检发布；阻塞 N4 JRE17（待用户）
+红线     不修 quirk、不碰冻结 fixtures、不换浮点顺序、不做范围外功能、禁宣称全平台逐位一致、品牌写 pySTEMTC
 ```

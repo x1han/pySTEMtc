@@ -1,4 +1,5 @@
 # PySTEMTC M3 第 5 轮门禁执行报告
+（品牌注记，2026-09-19：品牌自 2026-09-19 起写作 pySTEMTC（py 小写、STEM 大写、tc 小写）；文中 PySTEMTC 为当时记录）
 
 - 日期：2026-09-19
 - 范围：第 5 轮评审门禁的执行记录——c13/c14 金标扩展（N2 重设计）、git+CI（N5 P1）、Compatibility B 两层冻结落盘（N1）、N3 benchmark、N4 状态、两个 P2 修复
@@ -11,7 +12,7 @@
 | 门禁项（第 5 轮裁决） | 状态 | 证据 |
 |----|------|------|
 | c13/c14 重设计 + 生成 + 分支到达断言 | **完成** | 4 张新参照表 + `tests/test_golden_branches.py` 4 断言全过 |
-| git + 最小跨平台 CI（N5，P1） | **完成**（本地） | git 仓库 2 提交；`.github/workflows/ci.yml`（Win+Ubuntu × Py3.12/3.14）——push 到 GitHub 后生效 |
+| git + 最小跨平台 CI（N5，P1） | **完成**（本地） | git 仓库 2 提交；`.github/workflows/ci.yml`（Win+Ubuntu × Py3.12/3.14）——push 到 GitHub 后生效；跨平台验证以首次 push 后 CI 绿灯为准 |
 | Compatibility B 两层冻结（N1） | **完成** | spec §0（B-output canonical exact / B-internal 不得反噬 A；反冻结声明） |
 | N3 benchmark（只测不优化） | **完成** | §4 表（3 档实测 wall + peak RSS） |
 | N4 JRE 17 characterization | **阻塞** | 本机仅有 JRE 1.8.0_451；待安装后执行 |
@@ -56,8 +57,8 @@ spots,T,genes,profiles,wall_s,peak_rss_mib
 
 解读：
 - 早期 M2 的粗估（"样例 75s、3 万基因小时级"）**明显悲观**：实测 3000×10T 全流程仅 29.3s、10000×10T 仅 53.5s（约 5.9 ms/幸存基因——3.3× 基因数只花 1.8× 时间，大基因数下单位成本摊薄）。此前 HANDOFF 里的 75s 数字应是早期未优化中间版或含 JVM 的对拍口径，以本次实测为准修正记录。
-- 外推（线性、按 profile 相关计算占比）：3 万基因 × 50 置换 × **50** profile ≈ 3 分钟级；× **500** profile（用户放大参数网格时）≈ 半小时级——远好于此前"小时级"的担忧。**V1 不需要为此优化**（与第 5 轮"不要现在换 Numba/vectorization"一致）。
-- 内存：peak RSS ~870 MiB 在 10T 两档持平，说明主导项不是 spot 级存储（3000→10000 spots 仅 3.3×数据），而是 profile 候选/置换工作缓冲；对 headless/agent 场景 <1GB 可接受。
+- 外推（线性、按 profile 相关计算占比）：3 万基因 × 50 置换 × **50** profile ≈ 3 分钟级；× **500** profile（用户放大参数网格时）≈ 半小时级——远好于此前"小时级"的担忧。**当前单机 benchmark 未给出 V1.0 必须先优化的理由**（第 6 轮修正注记：原文"V1 不需要为此优化"；与第 5 轮"不要现在换 Numba/vectorization"一致）。
+- 内存：peak RSS 在 10T 两档持平于 **~870 MiB**（含 numpy/pandas 导入；主导项为 profile 候选/置换工作缓冲），说明主导项不是 spot 级存储（3000→10000 spots 仅 3.3×数据）（第 6 轮修正注记：原文"对 headless/agent 场景 <1GB 可接受"改为事实陈述，不做可接受性判断）。
 - 局限：单机单线程单次测量，无重复试验取方差；Windows-only（Linux 侧数字待 CI/首次 push 后补）。优化决策推迟到专家/用户看过本表之后。
 
 ## 5. N4：JRE 17 characterization——阻塞
