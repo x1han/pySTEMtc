@@ -15,12 +15,13 @@ frozen scope); ``Clustering_Method = K-means`` raises
 
 from __future__ import annotations
 
+import time
 from dataclasses import asdict, replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
 
-from . import __version__
 from .assign import best_assignments
 from .clustering import cluster_profiles
 from .config import STEMConfig
@@ -95,16 +96,39 @@ class STEM:
     ) -> STEMResult:
         """Run the full analysis.  ``data`` may be a native STEM tsv/tsv.gz
         path, a wide DataFrame (required column ``gene``, optional ``spot``,
-        remaining columns = time points), or a ready :class:`STEMDataset`."""
+        remaining columns = time points), or a ready :class:`STEMDataset`.
+
+        The input shape is captured into ``result.input`` (``form``,
+        ``data_file``, ``repeat_files``, plus ``time_points`` once the
+        dataset is built).  ``result.timing`` records stage wall times in
+        seconds via ``time.perf_counter`` — pure instrumentation wrapped
+        AROUND the unchanged computation order (no stage is reordered or
+        split).  A pre-built :class:`STEMDataset` skips reading/normalizing
+        entirely; ``input_read``/``normalize_filter`` then report ``0.0``.
+        """
         config = self.config
         if repeat_mode is not None:
             config = replace(config, repeat_mode=repeat_mode)
 
+        wall_start = time.perf_counter()
+        timing: dict[str, float] = {}
+
         if isinstance(data, STEMDataset):
             ds = data
-            input_form = "stem_dataset"
-            return self._analyze(ds, config, input_form)
+            input_info = {
+                "form": "stem_dataset",
+                "data_file": None,
+                # Pre-built datasets carry their repeats inside; the
+                # replicates argument is ignored on this path (documented
+                # quirk of the direct-injection form), hence no repeat file
+                # records.
+                "repeat_files": [],
+            }
+            timing["input_read"] = 0.0
+            timing["normalize_filter"] = 0.0
+            return self._analyze(ds, config, input_info, timing, wall_start)
 
+        t_read = time.perf_counter()
         if isinstance(data, pd.DataFrame):
             main = dataframe_to_spotset(
                 data,
@@ -153,15 +177,44 @@ class STEM:
                         repeat_set=True,
                     )
                 )
-        ds = build_stem_dataset(main, repeats, config.repeat_mode, config)
+        timing["input_read"] = time.perf_counter() - t_read
 
-        return self._analyze(ds, config, input_form)
+        # schema-v2 input snapshot: record what fit() was handed, without
+        # claiming anything about paths it did not receive.
+        if input_form == "dataframe":
+            input_info = {
+                "form": "dataframe",
+                "data_file": None,
+                "repeat_files": [None] * len(rep_sources),
+            }
+        else:
+            input_info = {
+                "form": "path",
+                "data_file": str(data),
+                "repeat_files": [
+                    str(rep_source) if rep_source is not None else None
+                    for rep_source in rep_sources
+                ],
+            }
+
+        t_normalize = time.perf_counter()
+        ds = build_stem_dataset(main, repeats, config.repeat_mode, config)
+        timing["normalize_filter"] = time.perf_counter() - t_normalize
+
+        return self._analyze(ds, config, input_info, timing, wall_start)
 
     # ------------------------------------------------------------------
-    def _analyze(self, ds: STEMDataset, config: STEMConfig, input_form: str) -> STEMResult:
+    def _analyze(
+        self,
+        ds: STEMDataset,
+        config: STEMConfig,
+        input_info: dict,
+        timing: dict,
+        wall_start: float,
+    ) -> STEMResult:
         if config.clustering_method != "stem":
             raise NotImplementedError(
-                "K-means clustering is not implemented in PySTEMTC V1 "
+                "K-means clustering is not implemented in pySTEMTC V1 "
                 "(frozen scope; planned for V1.1 with the Random(2211) + "
                 "reservoir-sampling restart replica)"
             )
@@ -171,6 +224,7 @@ class STEM:
 
         self._validate_profile_params(config)
 
+        t_stage = time.perf_counter()
         # generatemodelprofiles (STEM_DataSet.java:766-806)
         nchoices = 2 * config.max_unit_change + 1
         if float(nchoices) ** (numcols - 1) < config.candidate_cap:  # :776
@@ -185,7 +239,9 @@ class STEM:
             config.max_correlation,
             config.max_unit_change,
         )
+        timing["profile_generation"] = time.perf_counter() - t_stage
 
+        t_stage = time.perf_counter()
         # findbestgroupassignments (STEM_DataSet.java:1718-1758)
         assignments = best_assignments(ds.gene_data, ds.gene_pma, models)
 
@@ -196,13 +252,17 @@ class STEM:
             dweight = 1.0 / numassigned
             for pid in row_assignments:
                 counts[pid] += dweight
+        timing["assignment"] = time.perf_counter() - t_stage
 
+        t_stage = time.perf_counter()
         # computeaveragetally (STEM_DataSet.java:1038-1375)
         expected, perm_meta = expected_counts(
             ds, models, config.n_permutations, config.permute_t0
         )
         expected_list = [float(v) for v in expected]
+        timing["permutation"] = time.perf_counter() - t_stage
 
+        t_stage = time.perf_counter()
         # computePvaluesAssignments (STEM_DataSet.java:287-335)
         pvalues = [
             count_pvalue(counts[i], numrows, expected_list[i] / numrows)
@@ -214,7 +274,9 @@ class STEM:
             config.correction,
             counts=counts,
         )
+        timing["significance"] = time.perf_counter() - t_stage
 
+        t_stage = time.perf_counter()
         # clusterprofiles (STEM_DataSet.java:870-997)
         sig_ids = [i for i, sig in enumerate(significant) if sig]
         clusters = cluster_profiles(
@@ -229,6 +291,7 @@ class STEM:
         for cid, members in enumerate(clusters):
             for pid in members:
                 cluster_of[pid] = cid
+        timing["clustering"] = time.perf_counter() - t_stage
 
         profiles = [
             ProfileRecord(
@@ -248,7 +311,7 @@ class STEM:
             GeneAssignment(
                 gene=genes[nrow],
                 probe=ds.gene_probes[nrow],
-                profile=";".join(str(pid) for pid in assignments[nrow]),
+                profile_ids=list(assignments[nrow]),
                 values=[float(v) for v in ds.gene_data[nrow]],
                 present=[bool(p != 0) for p in ds.gene_pma[nrow]],
             )
@@ -256,9 +319,7 @@ class STEM:
         ]
 
         metadata = {
-            "software": f"PySTEMTC {__version__}",
-            "reference": "STEM v1.3.14 (Ernst, Patek, Bar-Joseph)",
-            "input_form": input_form,
+            "input_form": input_info["form"],
             "num_genes": numrows,
             "num_time_points": numcols,
             "num_profiles": len(models),
@@ -266,7 +327,13 @@ class STEM:
             "permutation_mode": perm_meta["permutation_mode"],
             "n_permutations_requested": perm_meta["n_permutations_requested"],
             "legacy_with_replacement": perm_meta["legacy_with_replacement"],
+            "sample_labels": list(ds.sample_labels),
+            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
+
+        input_record = dict(input_info)
+        input_record["time_points"] = list(ds.sample_labels)
+        timing["wall"] = time.perf_counter() - wall_start
 
         return STEMResult(
             profiles=profiles,
@@ -275,6 +342,8 @@ class STEM:
             clusters=[list(c) for c in clusters],
             config=asdict(config),
             metadata=metadata,
+            input=input_record,
+            timing=timing,
         )
 
     # ------------------------------------------------------------------
