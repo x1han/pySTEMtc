@@ -1,0 +1,1948 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index b958cb6..8c7239d 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -11,7 +11,7 @@ jobs:
+       fail-fast: false
+       matrix:
+         os: [ubuntu-latest, windows-latest]
+-        python-version: ["3.12", "3.14"]
++        python-version: ["3.11", "3.12", "3.14"]
+     runs-on: ${{ matrix.os }}
+     steps:
+       - uses: actions/checkout@v4
+diff --git a/.gitignore b/.gitignore
+index 45872e1..93aea6c 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -6,3 +6,4 @@ dist/
+ *.egg-info/
+ .venv/
+ venv/
++benchmarks/_scratch/
+diff --git a/HANDOFF.md b/HANDOFF.md
+index 68495ec..de915e7 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -1,4 +1,4 @@
+-# PySTEMTC — Session Handoff
++# pySTEMTC — Session Handoff
+ 
+ > 按 dictionary-of-ai-coding 的 Handoff 定义编写：本文件把一个会话的上下文移交给下一个会话，**没有回路**。
+ > 评判标准：一个**零上下文**的新会话拿这份文件应当能 (1) 理解项目是什么、(2) 跑通验证、(3) 不重新翻案已定决策（每条决策都写了为什么）、(4) 知道下一步做什么、(5) 知道什么不能碰。
+@@ -8,7 +8,7 @@
+ 
+ ## 1. 这个项目是什么（一段话）
+ 
+-**PySTEMTC**（PyPI/import/CLI = `pystemtc`）是 Java 工具 **STEM v1.3.14**（Short Time-series Expression Miner，Ernst/Patek/Bar-Joseph，GPL-3.0，针对 ~≤8 时间点的时序基因表达聚类）的 **headless Python 兼容实现**——只移植 time-course 计算核心，不做 GO 富集、GUI、绘图、双条件比较。
++**pySTEMTC**（品牌大小写铁律第 6 轮定案：py 小写、STEM 大写、tc 小写，见 D12 与 spec §0 dated 修订注记；PyPI/import/CLI = `pystemtc` 全小写不变）是 Java 工具 **STEM v1.3.14**（Short Time-series Expression Miner，Ernst/Patek/Bar-Joseph，GPL-3.0，针对 ~≤8 时间点的时序基因表达聚类）的 **headless Python 兼容实现**——只移植 time-course 计算核心，不做 GO 富集、GUI、绘图、双条件比较。
+ 
+ **最高原则（Compatibility First，冻结）**：本地 STEM v1.3.14 是**唯一行为 oracle**。这不是"受 STEM 启发的重设计算法包"；所有设计争议先问"Java v1.3.14 怎么做"，不问"Python 里通常怎么做"。优先级链：**Java 行为一致性 > 代码简洁 > 运行速度 > Pythonic**。
+ 
+@@ -29,8 +29,9 @@
+ - 验证命令（当前全绿）：
+   ```bash
+   cd /d/stem/pySTEMtc
+-  python -m pytest -q          # 96 passed（52 M1 + 20 M2 单测 + 24 金标）
++  python -m pytest -q          # 136 passed（第 6 轮：105 基线 + 2 payload 回归 + 4 直通契约 + 14 金标值列 + 11 schema）
+   grep -rnE "np\.(sum|mean|std|dot|corrcoef|add\.reduce|einsum)\(" src/pystemtc/   # 必须为空
++  grep -rn "PySTEMTC" src/ pyproject.toml   # 必须为空（品牌铁律 D12；docs 历史注记除外）
+   ```
+ - 金标重生成（需要 JRE 8，Windows 有显示环境即可）：`python pySTEMtc/tools/gen_fixtures.py`（在 `D:/stem` 下运行）→ `tests/golden/`（12 配置 batch + 24 张表 + RNG/StatUtil 向量）。**fixtures 是冻结证据，不许编辑**（c09/c10/c11 的历史路径前缀见 §5-D8）；CI 不依赖 Java。
+ 
+@@ -41,6 +42,7 @@
+ - 闸门流程（每里程碑）：预审 → implementer → 独立 verifier → post-review → 主会话修 findings。M1/M2 均走完，verifier 均独立复跑并 ALL GREEN。
+ - **明确不外推**：GO/enrichment、双条件比较、K-means、绘图、`to_csv` 未实现；金标仅覆盖本地样例与合成数据；大规模性能未评估。
+ - **第 5 轮裁决（2026-09-19）：M2 正式 GO**。N1-N12 处置见 docs/05 §7；Compatibility B 冻结为两层定义（spec §0）；c13/c14 金标扩展设计钉死（spec §1.9）；git+CI 建立并基线提交；LICENSE（GPL-3.0）落库。JRE 17 characterization **阻塞**（本机无 JRE 17）。
++- **第 6 轮（2026-09-19）：M3 PASS；M4 GO-with-one-blocker（P1 数据保真缺陷）→ 本轮已解除**。P1 = 无重复数据集时 `merge_repeats` 零化 all-missing payload（根因与修复见 D13/spec §1.7）。本轮同时落地：全字段值列金标（14 配置逐格）、to_dict schema v2 + stage timing（D14/spec §1.10）、品牌铁律（D12）、benchmark 目录纪律（D15）、版本矩阵定案（requires-python 3.11 + CI 3.11/3.12/3.14 + provisional 依赖下界）。
+ 
+ ## 5. 已冻结的决策（不要重新翻案；每条带为什么）
+ 
+@@ -55,6 +57,10 @@
+ - **D9 异常类名 `STEMTCValueError`**（非 PySTEMTCValueError）。为什么：可读性取舍，已记录于 03 §1.8。
+ - **D10 V1 范围**：不做 GO/enrichment、annotation、chromosome/GFF、双条件比较、GUI、plotting、K-means（K-means 在 V1.1，seed 2211 + reservoir sampling 复刻）。输入只收**原始表达值**、行=spot；不接受预标准化矩阵、不提供裸 ndarray 入口。
+ - **D11 Java 源码 > 论文/手册；本地 v1.3.14 > GitHub master**。为什么：行为 oracle 是本地 jar+源码；论文与手册是描述，不是实现。
++- **D12 品牌大小写铁律（第 6 轮，2026-09-19）**：品牌写作 **pySTEMTC**（py 小写、STEM 大写、tc 小写）；PyPI/import/CLI `pystemtc` 全小写**不变**、不参与大小写规则。为什么：第 6 轮专家团定案（spec §0 dated 修订注记）；历史文档中的 PySTEMTC 为当时记录，不追溯改写，只在文档标题下加 dated 注记。新写 docstring/文档/发布物料一律 pySTEMTC。
++- **D13 P1 数据保真修复（第 6 轮）**：`filtering.merge_repeats` 函数体首行 `if not repeats: return main`（两模式共用）。为什么：Java 无重复数据集时**不调用** mergeDataSets（ST.java:2577 `theDataSetsMerged = theDataSet1`；:2669 两参构造是纯引用别名、零语义）；Python 的零初始化合并曾把 all-missing 格 payload（−Inf/NaN/填充值）清成幻影 0.0（c14 四个单 spot 基因 + c13 GENE_0008、缺末列恰 27 行实证）。安全性四点论证见 spec §1.7；专家字面设计"只补保真通道"被否——直通使矩阵对齐 Java 本身并消除双份真相。**不要"优化"掉这个直通，也不要给无重复路径恢复任何合并调用**。
++- **D14 to_dict schema v2 定案（第 6 轮，待 post-review 最终确认）**：顶层恰 11 键；`_encode_value` 五态真值表（先按存储 double 分类，再按 pma 分有限支）；`profile_ids: list[int]` 取代 `profile` 字符串；新增 `input`（form/data_file/repeat_files/time_points）与 `timing` 段；metadata 删 software/reference、增 timestamp/sample_labels。为什么：agent 消费接口需要无损、严格 JSON（allow_nan=False 必须成功）、稳定形状；全字段表见 spec §1.10。`values` 是无损 Java 矩阵快照，writer 消费 STEMResult 内部 floats。
++- **D15 benchmark 目录纪律（第 6 轮）**：`tests/golden/` 管**验收**（算得对不对），`benchmarks/` 管**记录**（算得多快）；两者互不 import、互不读取对方文件。任何优化必须**先 golden（全量通过）→ 优化 → 再全量 golden**；benchmark 数字只辅助决策，永不替代 golden 判据。`tools/bench.py` = M3 一次性证据（冻结不动）；`benchmarks/benchmark_core.py` = 可复跑 harness（核心组 B1-B6 + `--sweep`/`--reps`，结果落 `benchmarks/results/`）。
+ 
+ ## 6. 关键路径速查（file:line 级证据都在 02/03 文档里）
+ 
+@@ -65,10 +71,11 @@
+ 
+ ## 7. 下一步（按序；验收判据已写明）
+ 
+-1. **M3 验证收尾（第 5 轮裁决顺序）**：① c13/c14 金标扩展（spec §1.9 钉死设计；`gen_fixtures.py --fixtures` 增量 + 单配置 `stem.jar -b`，禁止整目录重跑）；② git + 最小跨平台 CI（**已完成**，Windows+Ubuntu matrix + 浮点纪律 AST 测试）；③ B 两层冻结（**已完成**，spec §0）；④ N3 benchmark 三档（只测不优化，`tools/bench.py`）；⑤ JRE 17 characterization（**阻塞**：本机无 JRE 17，待安装）。
+-2. **M4 发布工程**：`pystemtc run`+`batch` CLI（N6）；`write_java_tables`（N7，不叫 to_csv）；`to_dict` schema **实现前送审**（N8：schema_version/reference_version/非有限值→null）；metadata timestamp；warning 仅 `none_add0×permute_t0=True`（N9）；Python 版本矩阵（N10，注意 numpy 2.4.6 要求 ≥3.11）；PyPI 实时复检后以 `pystemtc` 发布。
+-3. **V1.1**：K-means（`Random(2211)` + reservoir sampling）、plot adapter、`STEMInput.from_gene_matrix` 便利构造器。
+-4. 每步继续既有闸门流程（预审→实现→独立验证→post-review）。
++1. **第 6 轮已执行（2026-09-19）**：P1 数据保真修复（先红后绿，D13）；全字段值列金标 `test_golden_genetable_values`（14 配置逐格）；to_dict schema v2 + stage timing（D14/spec §1.10）；requires-python 3.11 + CI matrix 3.11/3.12/3.14 + provisional 依赖下界；品牌铁律落盘（D12）+ 清扫；`benchmarks/benchmark_core.py` 可复跑 harness（专家网格 B1-B6 已全跑，记录 = `benchmarks/results/20260919T181249Z/`，B6 peak RSS 872.5 MiB 与 M3 冻结证据 ~870 MiB 互证）。verifier 10/10 PASS + post-review APPROVE（1 P2 已修：benchmark scratch 文件名带 seed，防止换 seed 后记录标错数据；3 P3 已修/记录：HANDOFF 标题品牌、`_NON_FINITE_STATES` 死常量删除、merge_repeats 模式校验提升到直通分支之前 + 新测试）。**遗留品牌点（冻结文件，须专家批准后清扫）**：`tests/golden/README.md:3` 与 `tools/gen_fixtures.py:1` 文档字符串仍是 PySTEMTC——内容字节不受影响，纳入下一轮解冻清单。
++2. **M4 发布工程（顺序）**：① `write_java_tables`（Compatibility C：∞/U+FFFD 渲染 + 平台默认字符集 + `encoding=` 参数，writer 裁决见 §0；`format_java_double` 从 `tests/test_integration_fixture.py` 晋升 `src/pystemtc/javaformat.py`；数据通道已就绪——消费 STEMResult 内部 floats，§1.10）；② CLI `run`+`batch`（§0 裁决：退出码 0/1/2、batch 失败继续 + stderr 总结、stdout 简洁成功；M5 warning 文案已冻结 §0，只 warn 一次）；③ **依赖下界冻结条件 = 3.11 CI 绿 = M6 push 之后**（此前保持 provisional）；④ PyPI `pystemtc` 实时复检后发布（发布文案模板见 §1.10，870 MiB 不得称轻量）。
++3. **阻塞项（待用户）**：N4 JRE 17 characterization（本机无 JRE 17，待用户安装任意发行版）；M6 push（待用户提供 GitHub 仓库，首次 CI 绿灯 = Linux 侧 A-exact 证据闭环）。M8：V1.0 带"未优化声明"发布（性能数字以 `benchmarks/results/` 最新一次为准，声明模板见 spec §1.10）。
++4. **V1.1**：K-means（`Random(2211)` + reservoir sampling）、plot adapter、`STEMInput.from_gene_matrix` 便利构造器。
++5. 每步继续既有闸门流程（预审→实现→独立验证→post-review）。
+ 
+ ## 8. 新会话的红线（容易踩的坑）
+ 
+@@ -76,18 +83,18 @@
+ 2. 不"修"任何 D6 所列 quirk；看到"Java 的行为在统计上不合理"时，先查 03 §1.6——大概率已记录且有意复刻。
+ 3. 不在 `src/pystemtc/` 数值路径引入被禁的 numpy 规约（见 §3 的 grep）。
+ 4. 不用 `stempy`/`STEMpy` 命名任何新代码或目录（历史文档与冻结 fixture 配置中的称谓除外，见 D8）。
+-5. 不因为测试慢就把金标断言改成容差或抽样——96 个测试里 24 个金标测试是本项目的存在理由。
++5. 不因为测试慢就把金标断言改成容差或抽样——136 个测试里 42 个金标测试是本项目的存在理由。
+ 6. 不实现 D10 范围外的功能，即使"顺手"。
+ 7. 引用 Java 行为时给 file:line；引用测试结果时跑一遍再写。旧会话的结论若与磁盘现状冲突，以磁盘为准。
+ 
+ ## 9. 一页速览
+ 
+ ```text
+-项目     PySTEMTC (pystemtc) — STEM v1.3.14 time-course 核心的 Python 兼容实现
+-状态     M2 GO（第5轮）；M3 进行中：105/105 测试；14 金标配置 A exact + B 两层定义
++项目     pySTEMTC (pystemtc) — STEM v1.3.14 time-course 核心的 Python 兼容实现
++状态     M3 PASS（第6轮）；M4 进行中：136/136 测试；14 金标 A exact + B 打印值全等 + 全字段值列逐格
+ oracle   D:\stem\stem.jar + D:\stem\sourcecode (v1.3.14, JRE 1.8.0_451)
+-代码     D:\stem\pySTEMtc（git 仓库，main 分支）  规范 docs/03（§1.9=c13/c14 设计）
++代码     D:\stem\pySTEMtc（git 仓库，main 分支）  规范 docs/03（§1.7=P1 修复，§1.10=schema v2/发布工程）
+ 验证     cd /d/stem/pySTEMtc && python -m pytest -q
+-下一步   M3 收尾 (benchmark→N4 JRE17阻塞) → M4 (CLI/write_java_tables/schema/发布) → V1.1
+-红线     不修 quirk、不碰冻结 fixtures、不换浮点顺序、不做范围外功能、禁宣称全平台逐位一致
++下一步   M4: write_java_tables → CLI → push+CI 绿（M6）→ 依赖下界冻结 → PyPI 复检发布；阻塞 N4 JRE17（待用户）
++红线     不修 quirk、不碰冻结 fixtures、不换浮点顺序、不做范围外功能、禁宣称全平台逐位一致、品牌写 pySTEMTC
+ ```
+diff --git a/benchmarks/README.md b/benchmarks/README.md
+new file mode 100644
+index 0000000..0adf184
+--- /dev/null
++++ b/benchmarks/README.md
+@@ -0,0 +1,55 @@
++# benchmarks/ — pySTEMTC re-runnable performance harness
++
++Re-runnable benchmark harness for the pySTEMTC core pipeline (round 6,
++HANDOFF D15).  `python benchmarks/benchmark_core.py` runs the core group
++B1-B6 (deterministic synthetic input, 50 permutations, 50 model profiles,
++normalize mode) in isolated subprocesses and writes a long-table CSV plus a
++summary Markdown into `results/<UTC timestamp>/`.
++
++## Relationship to `tools/bench.py` (do not confuse the two)
++
++- `tools/bench.py` = the **M3 one-shot evidence** run (round-5 ruling N3,
++  "measure only, do not optimize").  It is frozen: never edit it, never
++  import from it.
++- `benchmarks/benchmark_core.py` = the **re-runnable harness**: warm-up +
++  formal repetitions, median aggregation (min/max kept, never averaged),
++  per-stage timing from `result.timing`, process-isolated peak RSS, and
++  deterministic outputs under version control (`results/.gitkeep`).
++
++## Directory discipline (HANDOFF D15)
++
++- `tests/golden/` proves the engine computes the **same** results as Java
++  (acceptance); `benchmarks/` records how **fast** it computes them
++  (records).  The two are separate concerns with separate directories.
++- This directory never imports `tests/` (nor reads `tests/golden/`) and
++  never imports `tools/` — the synthetic-data generator below re-implements
++  the shared conventions (N(0,1), 3 decimals, dup_every=10 duplicate
++  structure, no missing cells, SPOT column) independently.
++- **Any optimization: full golden run (all pass) -> optimize -> full golden
++  run again.**  Golden proves "computes the same"; benchmarks prove
++  "computes this fast"; a benchmark number never replaces the golden
++  criterion.  Scratch data files land in `_scratch/` (gitignored).
++
++## Groups and flags
++
++| group | ids | definition |
++|---|---|---|
++| core (default) | B1-B6 | round-6 named grid: B1=1000x5T, B2=5000x5T, B3=10000x5T, B4=30000x5T, B5=10000x8T, B6=10000x10T; no repeat files |
++| `--sweep` | S10/S50/S100/S500/S1000 | 10000x8T with `n_permutations` in {10, 50, 100, 500, 1000} (50 model profiles) |
++| `--reps` | B7, B8 | 10000x5T and 10000x10T, each with 2 repeat files (`different_periods`) |
++
++Flags: `--bench B1,B4` (subset), `--all`, `--warmup N` (default 1),
++`--formal N` (default 3), `--seed` (default 20260919), `--outdir`
++(default `benchmarks/results/<UTCts>`).  `--worker`/`--bench-id`/`--input`
++are hidden internal modes (one bench, one run, one JSON line on stdout).
++
++Peak RSS is measured inside the isolated worker process: Windows via Psapi
++`GetProcessMemoryInfo` -> `PeakWorkingSetSize` (ctypes; implementation
++copied from `tools/bench.py`, attribution noted inline), Linux via
++`resource.getrusage(...).ru_maxrss * 1024`, macOS via `ru_maxrss` as-is.
++
++## Records
++
++`results/` holds the committed-but-empty marker only; each run creates its
++own `results/<UTCts>/<UTCts>_core.csv` + `_core.md` pair.  Keep the newest
++pair when committing measurement records; do not hand-edit them.
+diff --git a/benchmarks/benchmark_core.py b/benchmarks/benchmark_core.py
+new file mode 100644
+index 0000000..05f3f55
+--- /dev/null
++++ b/benchmarks/benchmark_core.py
+@@ -0,0 +1,466 @@
++"""Re-runnable performance harness for the pySTEMTC core (round-6, D15).
++
++Directory discipline (HANDOFF D15): ``tests/golden/`` proves the engine
++computes the SAME results as Java (acceptance); ``benchmarks/`` records how
++FAST it computes them (records).  The two never import each other and this
++script never reads ``tests/`` — including ``tests/golden`` — nor ``tools/``
++(the M3 one-shot evidence tool ``tools/bench.py`` stays frozen; the
++synthesizer below re-implements its conventions independently).
++
++Any optimization must follow: full golden run (all pass) -> optimize -> full
++golden run again.  Benchmark numbers only inform the decision; they never
++replace the golden criterion.
++
++Groups (default = core B1-B6, the round-6 named grid):
++- B1..B6  core scaling grid, 0 repeat files:
++          B1=1k x 5T, B2=5k x 5T, B3=10k x 5T, B4=30k x 5T,
++          B5=10k x 8T, B6=10k x 10T
++- --sweep S10/S50/S100/S500/S1000: 10000 spots x 8T with
++          n_permutations in {10, 50, 100, 500, 1000} (not part of smoke)
++- --reps  B7 = 10000x5T and B8 = 10000x10T, each with 2 repeat files
++          (different_periods), exercising the repeat-merge path
++
++Each (benchmark, run) executes in a fresh subprocess (``--worker`` hidden
++mode) so peak RSS is process-monotonic per run: warm-up runs are discarded,
++formal runs are aggregated by MEDIAN (min/max kept, never averaged).
++
++Usage:
++  python benchmarks/benchmark_core.py                     # core B1-B6
++  python benchmarks/benchmark_core.py --bench B1,B4      # subset
++  python benchmarks/benchmark_core.py --sweep            # permutation-count sweep
++  python benchmarks/benchmark_core.py --reps             # repeat-file group
++  python benchmarks/benchmark_core.py --all
++  python benchmarks/benchmark_core.py --bench B1 --formal 1   # smoke
++
++Outputs: <outdir>/<ts>_core.csv (long table, one row per run) and
++<outdir>/<ts>_core.md (summary + environment header), with
++<outdir> defaulting to benchmarks/results/<UTC timestamp>.
++"""
++
++from __future__ import annotations
++
++import argparse
++import csv
++import json
++import platform as _platform
++import statistics
++import subprocess
++import sys
++import time
++from dataclasses import dataclass
++from datetime import datetime, timezone
++from pathlib import Path
++
++_HERE = Path(__file__).resolve().parent
++_PROJECT = _HERE.parent
++if str(_PROJECT / "src") not in sys.path:
++    sys.path.insert(0, str(_PROJECT / "src"))
++
++SCRATCH = _HERE / "_scratch"
++RESULTS = _HERE / "results"
++
++SEED_DEFAULT = 20260919
++
++
++@dataclass(frozen=True)
++class BenchSpec:
++    bench_id: str
++    spots: int
++    time_points: int
++    repeat_files: int = 0
++    max_model_profiles: int = 50
++    n_permutations: int = 50
++    group: str = "core"  # core | sweep | repeats
++
++
++CORE: list[BenchSpec] = [
++    BenchSpec("B1", 1_000, 5),
++    BenchSpec("B2", 5_000, 5),
++    BenchSpec("B3", 10_000, 5),
++    BenchSpec("B4", 30_000, 5),
++    BenchSpec("B5", 10_000, 8),
++    BenchSpec("B6", 10_000, 10),
++]
++SWEEP: list[BenchSpec] = [
++    BenchSpec(f"S{n}", 10_000, 8, n_permutations=n, group="sweep")
++    for n in (10, 50, 100, 500, 1000)
++]
++REPEATS: list[BenchSpec] = [
++    BenchSpec("B7", 10_000, 5, repeat_files=2, group="repeats"),
++    BenchSpec("B8", 10_000, 10, repeat_files=2, group="repeats"),
++]
++ALL_SPECS: dict[str, BenchSpec] = {
++    spec.bench_id: spec for spec in CORE + SWEEP + REPEATS
++}
++
++STAGE_KEYS = (
++    "input_read",
++    "normalize_filter",
++    "profile_generation",
++    "assignment",
++    "permutation",
++    "significance",
++    "clustering",
++)
++
++
++# --------------------------------------------------------------------------
++# synthetic input (same conventions as tools/bench.py, independent code)
++# --------------------------------------------------------------------------
++
++
++def _write_synth(path: Path, n_spots: int, n_cols: int, seed: int) -> None:
++    """Deterministic STEM tsv: values ~ N(0,1), 3 decimals, dup_every=10
++    duplicate structure, no missing cells, SPOT column, t0..t{T-1} header.
++    normalize mode; the same conventions as the M3 evidence tool, but
++    implemented here so benchmarks/ never imports tools/."""
++    import numpy as np
++
++    rng = np.random.default_rng(seed)
++    values = rng.normal(0.0, 1.0, size=(n_spots, n_cols))
++    genes: list[str] = []
++    for i in range(n_spots):
++        if i % 10 == 1 and genes:
++            genes.append(genes[-1])  # duplicate the previous gene
++        else:
++            genes.append(f"GENE_{i:06d}")
++    with open(path, "w", newline="\n") as fh:
++        fh.write("SPOT\tGene Symbol\t" + "\t".join(f"t{j}" for j in range(n_cols)) + "\n")
++        for i in range(n_spots):
++            cells = [str(i + 1), genes[i]]
++            cells += [f"{values[i, j]:.3f}" for j in range(n_cols)]
++            fh.write("\t".join(cells) + "\n")
++
++
++def _ensure_inputs(spec: BenchSpec, seed: int) -> list[Path]:
++    """Write (once per seed) the main + repeat data files for a bench.  The
++    seed is part of the filename so a run with a different --seed can never
++    silently reuse data generated under an older seed while labelling its
++    record with the new one."""
++    SCRATCH.mkdir(parents=True, exist_ok=True)
++    stem = SCRATCH / f"{spec.bench_id}_{spec.spots}x{spec.time_points}_seed{seed}"
++    paths = [stem.with_suffix(".txt")]
++    if not paths[0].exists():
++        _write_synth(paths[0], spec.spots, spec.time_points, seed)
++    for k in range(spec.repeat_files):
++        rep = SCRATCH / f"{spec.bench_id}_{spec.spots}x{spec.time_points}_seed{seed}_rep{k + 1}.txt"
++        if not rep.exists():
++            _write_synth(rep, spec.spots, spec.time_points, seed + k + 1)
++        paths.append(rep)
++    return paths
++
++
++# --------------------------------------------------------------------------
++# worker mode (one benchmark, one run, one JSON line)
++# --------------------------------------------------------------------------
++
++
++def _peak_rss_bytes() -> int:
++    """Peak memory of THIS process in bytes.
++
++    Windows: Psapi GetProcessMemoryInfo -> PeakWorkingSetSize via ctypes —
++    implementation copied from tools/bench.py (which must not be imported;
++    D15 directory discipline).  Linux: getrusage ru_maxrss is KiB -> *1024.
++    macOS/darwin: ru_maxrss is already bytes.
++    """
++    import ctypes
++
++    if sys.platform == "win32":
++        class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
++            _fields_ = [
++                ("cb", ctypes.c_uint32),
++                ("PageFaultCount", ctypes.c_uint32),
++                ("PeakWorkingSetSize", ctypes.c_size_t),
++                ("WorkingSetSize", ctypes.c_size_t),
++                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
++                ("QuotaPagedPoolUsage", ctypes.c_size_t),
++                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
++                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
++                ("PagefileUsage", ctypes.c_size_t),
++                ("PeakPagefileUsage", ctypes.c_size_t),
++            ]
++
++        psapi = ctypes.WinDLL("Psapi.dll")
++        kernel32 = ctypes.WinDLL("kernel32.dll")
++        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
++        psapi.GetProcessMemoryInfo.argtypes = [
++            ctypes.c_void_p,
++            ctypes.POINTER(PROCESS_MEMORY_COUNTERS),
++            ctypes.c_uint32,
++        ]
++        psapi.GetProcessMemoryInfo.restype = ctypes.c_int
++        counters = PROCESS_MEMORY_COUNTERS()
++        counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
++        handle = kernel32.GetCurrentProcess()
++        if not psapi.GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.cb):
++            raise OSError("GetProcessMemoryInfo failed")
++        return int(counters.PeakWorkingSetSize)
++    if sys.platform.startswith("linux"):
++        import resource
++
++        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
++    if sys.platform == "darwin":
++        import resource
++
++        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
++    raise OSError(f"peak RSS unsupported on platform {sys.platform!r}")
++
++
++def _run_worker(spec: BenchSpec, inputs: list[str]) -> dict:
++    from pystemtc.engine import STEM
++
++    engine = STEM(
++        normalize="normalize",
++        max_unit_change=2,
++        max_model_profiles=spec.max_model_profiles,
++        max_correlation=1.0,
++        candidate_cap=1_000_000,
++        n_permutations=spec.n_permutations,
++        permute_t0=True,
++        alpha=0.05,
++        correction="bonferroni",
++        cluster_min_correlation=0.7,
++        cluster_corr_percentile=0.0,
++        max_missing=0,
++        min_abs_expr=0.5,
++        change_rule="max_minus_min",
++        repeat_min_correlation=0.0,
++        repeat_mode="different_periods",
++        spot_included=True,
++    )
++    t0 = time.perf_counter()
++    if spec.repeat_files:
++        main, *reps = inputs
++        result = engine.fit(main, replicates=reps)
++    else:
++        result = engine.fit(inputs[0])
++    wall = time.perf_counter() - t0
++    payload = {
++        "bench": spec.bench_id,
++        "spots": spec.spots,
++        "time_points": spec.time_points,
++        "repeat_files": spec.repeat_files,
++        "genes": len(result.gene_assignments),
++        "profiles": len(result.profiles),
++        "n_perms": spec.n_permutations,
++        "permutation_mode": result.metadata["permutation_mode"],
++        "wall_s": wall,
++        "peak_rss_bytes": _peak_rss_bytes(),
++        "stages": {key: result.timing[key] for key in STAGE_KEYS},
++    }
++    print(json.dumps(payload), flush=True)
++
++
++# --------------------------------------------------------------------------
++# parent mode (orchestration + aggregation)
++# --------------------------------------------------------------------------
++
++
++def _spawn_worker(spec: BenchSpec, inputs: list[Path]) -> dict:
++    cmd = [
++        sys.executable,
++        str(Path(__file__).resolve()),
++        "--worker",
++        "--bench-id",
++        spec.bench_id,
++        "--input",
++        ",".join(str(p) for p in inputs),
++    ]
++    proc = subprocess.run(cmd, capture_output=True, text=True)
++    if proc.returncode != 0:
++        raise RuntimeError(
++            f"worker for {spec.bench_id} failed (rc={proc.returncode}):\n{proc.stderr[-2000:]}"
++        )
++    lines = [line for line in proc.stdout.splitlines() if line.strip()]
++    if not lines:
++        raise RuntimeError(f"worker for {spec.bench_id} produced no JSON line")
++    return json.loads(lines[-1])
++
++
++def _versions() -> dict[str, str]:
++    import importlib.metadata
++
++    return {
++        "python": _platform.python_version(),
++        "numpy": importlib.metadata.version("numpy"),
++        "pandas": importlib.metadata.version("pandas"),
++        "platform": _platform.platform(),
++    }
++
++
++CSV_FIELDS = (
++    ["bench", "run", "kind", "spots", "time_points", "repeat_files",
++     "genes", "profiles", "n_perms", "permutation_mode", "wall_s",
++     "peak_rss_mib"]
++    + [f"stage_{key}_s" for key in STAGE_KEYS]
++    + ["python", "numpy", "pandas", "platform"]
++)
++
++
++def _csv_row(result: dict, run_idx: int, kind: str, versions: dict[str, str]) -> dict:
++    row = {
++        "bench": result["bench"],
++        "run": run_idx,
++        "kind": kind,
++        "spots": result["spots"],
++        "time_points": result["time_points"],
++        "repeat_files": result["repeat_files"],
++        "genes": result["genes"],
++        "profiles": result["profiles"],
++        "n_perms": result["n_perms"],
++        "permutation_mode": result["permutation_mode"],
++        "wall_s": round(result["wall_s"], 3),
++        "peak_rss_mib": round(result["peak_rss_bytes"] / 2**20, 1),
++        "python": versions["python"],
++        "numpy": versions["numpy"],
++        "pandas": versions["pandas"],
++        "platform": versions["platform"],
++    }
++    for key in STAGE_KEYS:
++        row[f"stage_{key}_s"] = round(result["stages"][key], 4)
++    return row
++
++
++def _median(values: list[float]) -> float:
++    return statistics.median(values)
++
++
++def _write_markdown(
++    path: Path,
++    specs: list[BenchSpec],
++    formal_by_bench: dict[str, list[dict]],
++    versions: dict[str, str],
++    args: argparse.Namespace,
++    stamp: str,
++) -> None:
++    lines = [
++        "# pySTEMTC core benchmark results",
++        "",
++        f"- Generated (UTC): {stamp}",
++        f"- Platform: {versions['platform']}",
++        f"- Python {versions['python']} | numpy {versions['numpy']} | pandas {versions['pandas']}",
++        f"- Seed: {args.seed} | warm-up runs: {args.warmup} | formal runs: {args.formal}"
++        f" (aggregation = median, min/max kept, never averaged)",
++        "- Wall time = one STEM.fit() over the whole pipeline; peak RSS = full"
++        " process peak of the isolated worker (numpy/pandas import included).",
++        "- Discipline (HANDOFF D15): golden proves correctness, benchmarks"
++        " prove speed; any optimization is golden -> optimize -> golden.",
++        "",
++        "## Wall time and memory (medians over formal runs)",
++        "",
++        "| bench | spots | T | repeat files | genes | profiles | n_perms |"
++        " permutation_mode | wall median s | wall min s | wall max s |"
++        " peak RSS MiB median |",
++        "|---|---|---|---|---|---|---|---|---|---|---|---|",
++    ]
++    for spec in specs:
++        runs = formal_by_bench[spec.bench_id]
++        walls = [r["wall_s"] for r in runs]
++        rss = _median([r["peak_rss_bytes"] for r in runs]) / 2**20
++        first = runs[0]
++        lines.append(
++            f"| {spec.bench_id} | {spec.spots} | {spec.time_points} |"
++            f" {spec.repeat_files} | {first['genes']} | {first['profiles']} |"
++            f" {first['n_perms']} | {first['permutation_mode']} |"
++            f" {_median(walls):.2f} | {min(walls):.2f} | {max(walls):.2f} | {rss:.1f} |"
++        )
++    lines += [
++        "",
++        "## Stage wall times (medians over formal runs, seconds)",
++        "",
++        "| bench | " + " | ".join(STAGE_KEYS) + " |",
++        "|---" * (len(STAGE_KEYS) + 1) + "|",
++    ]
++    for spec in specs:
++        runs = formal_by_bench[spec.bench_id]
++        medians = [
++            _median([r["stages"][key] for r in runs]) for key in STAGE_KEYS
++        ]
++        lines.append(
++            f"| {spec.bench_id} | " + " | ".join(f"{m:.3f}" for m in medians) + " |"
++        )
++    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
++
++
++def main() -> None:
++    ap = argparse.ArgumentParser(
++        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
++    )
++    ap.add_argument("--bench", default=None, help="comma list of bench ids (subset)")
++    ap.add_argument("--sweep", action="store_true", help="add the S* permutation-count sweep group")
++    ap.add_argument("--reps", action="store_true", help="add the B7/B8 repeat-file group")
++    ap.add_argument("--all", action="store_true", help="run every group")
++    ap.add_argument("--warmup", type=int, default=1, help="discarded warm-up runs (default 1)")
++    ap.add_argument("--formal", type=int, default=3, help="formal runs (default 3)")
++    ap.add_argument("--seed", type=int, default=SEED_DEFAULT)
++    ap.add_argument("--outdir", default=None, help="default: benchmarks/results/<UTCts>")
++    ap.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
++    ap.add_argument("--bench-id", default=None, help=argparse.SUPPRESS)
++    ap.add_argument("--input", default=None, help=argparse.SUPPRESS)
++    args = ap.parse_args()
++
++    if args.worker:
++        spec = ALL_SPECS[args.bench_id]
++        inputs = args.input.split(",")
++        _run_worker(spec, inputs)
++        return
++
++    if args.bench:
++        unknown = [b for b in args.bench.split(",") if b not in ALL_SPECS]
++        if unknown:
++            raise SystemExit(f"unknown bench id(s): {', '.join(unknown)}")
++        selected = [ALL_SPECS[b] for b in args.bench.split(",")]
++    else:
++        pool = list(CORE)
++        if args.sweep or args.all:
++            pool += SWEEP
++        if args.reps or args.all:
++            pool += REPEATS
++        selected = pool
++    if args.formal < 1:
++        raise SystemExit("--formal must be >= 1")
++
++    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
++    outdir = Path(args.outdir) if args.outdir else RESULTS / stamp
++    outdir.mkdir(parents=True, exist_ok=True)
++    versions = _versions()
++
++    print(f"pySTEMTC benchmark run {stamp}: benches={[s.bench_id for s in selected]}")
++    print(f"environment: {versions}", flush=True)
++
++    csv_path = outdir / f"{stamp}_core.csv"
++    md_path = outdir / f"{stamp}_core.md"
++    rows: list[dict] = []
++    formal_by_bench: dict[str, list[dict]] = {}
++
++    for spec in selected:
++        inputs = _ensure_inputs(spec, args.seed)
++        results: list[dict] = []
++        total_runs = args.warmup + args.formal
++        for run_idx in range(total_runs):
++            kind = "warmup" if run_idx < args.warmup else "formal"
++            t0 = time.perf_counter()
++            result = _spawn_worker(spec, inputs)
++            rows.append(_csv_row(result, run_idx + 1, kind, versions))
++            if kind == "formal":
++                results.append(result)
++            print(
++                f"[{spec.bench_id}] {kind} run {run_idx + 1}/{total_runs}:"
++                f" wall={result['wall_s']:.2f}s"
++                f" rss={result['peak_rss_bytes'] / 2**20:.1f}MiB"
++                f" (spawn+parse {time.perf_counter() - t0:.1f}s)",
++                flush=True,
++            )
++        formal_by_bench[spec.bench_id] = results
++
++    with open(csv_path, "w", newline="", encoding="utf-8") as fh:
++        writer = csv.DictWriter(fh, fieldnames=CSV_FIELDS)
++        writer.writeheader()
++        writer.writerows(rows)
++    _write_markdown(md_path, selected, formal_by_bench, versions, args, stamp)
++    print(f"CSV:  {csv_path}")
++    print(f"MD:   {md_path}", flush=True)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/benchmarks/results/.gitkeep b/benchmarks/results/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+diff --git a/benchmarks/results/20260919T181249Z/20260919T181249Z_core.csv b/benchmarks/results/20260919T181249Z/20260919T181249Z_core.csv
+new file mode 100644
+index 0000000..15129ab
+--- /dev/null
++++ b/benchmarks/results/20260919T181249Z/20260919T181249Z_core.csv
+@@ -0,0 +1,25 @@
++bench,run,kind,spots,time_points,repeat_files,genes,profiles,n_perms,permutation_mode,wall_s,peak_rss_mib,stage_input_read_s,stage_normalize_filter_s,stage_profile_generation_s,stage_assignment_s,stage_permutation_s,stage_significance_s,stage_clustering_s,python,numpy,pandas,platform
++B1,1,warmup,1000,5,0,892,50,50,subsample_universe,0.662,76.3,0.0045,0.0056,0.01,0.0358,0.5962,0.008,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B1,2,formal,1000,5,0,892,50,50,subsample_universe,0.67,76.3,0.0047,0.0049,0.0102,0.0368,0.6039,0.0076,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B1,3,formal,1000,5,0,892,50,50,subsample_universe,0.665,76.2,0.0048,0.0046,0.0101,0.0355,0.6005,0.0075,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B1,4,formal,1000,5,0,892,50,50,subsample_universe,0.664,75.9,0.0046,0.0045,0.01,0.0356,0.5996,0.0078,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B2,1,warmup,5000,5,0,4478,50,50,subsample_universe,4.147,81.5,0.0221,0.0267,0.0105,0.1773,3.8128,0.0787,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B2,2,formal,5000,5,0,4478,50,50,subsample_universe,4.162,81.9,0.0231,0.0275,0.0098,0.1836,3.8281,0.0724,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B2,3,formal,5000,5,0,4478,50,50,subsample_universe,4.121,81.5,0.0218,0.0267,0.0105,0.1799,3.7921,0.0733,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B2,4,formal,5000,5,0,4478,50,50,subsample_universe,4.282,81.8,0.0249,0.0285,0.0103,0.1908,3.9347,0.076,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B3,1,warmup,10000,5,0,8962,50,50,subsample_universe,10.893,87.0,0.0433,0.0491,0.0104,0.3603,10.2377,0.1515,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B3,2,formal,10000,5,0,8962,50,50,subsample_universe,10.59,87.0,0.0433,0.0481,0.0101,0.3572,9.9427,0.1528,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B3,3,formal,10000,5,0,8962,50,50,subsample_universe,10.547,87.2,0.0445,0.0509,0.0105,0.3553,9.8786,0.1687,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B3,4,formal,10000,5,0,8962,50,50,subsample_universe,10.966,88.3,0.0439,0.0492,0.0103,0.3584,10.2949,0.1654,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B4,1,warmup,30000,5,0,26878,50,50,subsample_universe,38.675,111.0,0.1339,0.1408,0.0101,1.2061,36.5851,0.472,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B4,2,formal,30000,5,0,26878,50,50,subsample_universe,39.268,110.7,0.1347,0.1419,0.0106,1.082,37.2665,0.5218,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B4,3,formal,30000,5,0,26878,50,50,subsample_universe,38.98,111.3,0.1349,0.1391,0.0105,1.0718,37.0246,0.4768,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B4,4,formal,30000,5,0,26878,50,50,subsample_universe,38.88,111.3,0.1308,0.1402,0.0106,1.2302,36.7709,0.4733,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B5,1,warmup,10000,8,0,9000,50,50,subsample_universe,20.739,119.2,0.0632,0.0677,1.7482,0.5636,18.0734,0.1795,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B5,2,formal,10000,8,0,9000,50,50,subsample_universe,19.934,119.3,0.0627,0.0677,1.6451,0.5034,17.4514,0.162,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B5,3,formal,10000,8,0,9000,50,50,subsample_universe,19.713,119.6,0.062,0.0675,1.636,0.487,17.2648,0.1545,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B5,4,formal,10000,8,0,9000,50,50,subsample_universe,20.874,119.3,0.0641,0.0664,1.6738,0.4917,18.3579,0.1582,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B6,1,warmup,10000,10,0,9000,50,50,on_the_fly,50.928,872.4,0.075,0.0799,20.5066,1.2985,28.5877,0.1724,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B6,2,formal,10000,10,0,9000,50,50,on_the_fly,50.99,872.6,0.0757,0.0817,20.6345,1.2572,28.5124,0.1934,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B6,3,formal,10000,10,0,9000,50,50,on_the_fly,50.75,872.4,0.0771,0.0835,20.5302,1.2465,28.3669,0.2027,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
++B6,4,formal,10000,10,0,9000,50,50,on_the_fly,51.236,872.5,0.0769,0.0804,21.0559,1.2616,28.3718,0.1584,0.0,3.14.3,2.4.6,3.0.3,Windows-11-10.0.26200-SP0
+diff --git a/benchmarks/results/20260919T181249Z/20260919T181249Z_core.md b/benchmarks/results/20260919T181249Z/20260919T181249Z_core.md
+new file mode 100644
+index 0000000..22c6053
+--- /dev/null
++++ b/benchmarks/results/20260919T181249Z/20260919T181249Z_core.md
+@@ -0,0 +1,30 @@
++# pySTEMTC core benchmark results
++
++- Generated (UTC): 20260919T181249Z
++- Platform: Windows-11-10.0.26200-SP0
++- Python 3.14.3 | numpy 2.4.6 | pandas 3.0.3
++- Seed: 20260919 | warm-up runs: 1 | formal runs: 3 (aggregation = median, min/max kept, never averaged)
++- Wall time = one STEM.fit() over the whole pipeline; peak RSS = full process peak of the isolated worker (numpy/pandas import included).
++- Discipline (HANDOFF D15): golden proves correctness, benchmarks prove speed; any optimization is golden -> optimize -> golden.
++
++## Wall time and memory (medians over formal runs)
++
++| bench | spots | T | repeat files | genes | profiles | n_perms | permutation_mode | wall median s | wall min s | wall max s | peak RSS MiB median |
++|---|---|---|---|---|---|---|---|---|---|---|---|
++| B1 | 1000 | 5 | 0 | 892 | 50 | 50 | subsample_universe | 0.66 | 0.66 | 0.67 | 76.2 |
++| B2 | 5000 | 5 | 0 | 4478 | 50 | 50 | subsample_universe | 4.16 | 4.12 | 4.28 | 81.8 |
++| B3 | 10000 | 5 | 0 | 8962 | 50 | 50 | subsample_universe | 10.59 | 10.55 | 10.97 | 87.2 |
++| B4 | 30000 | 5 | 0 | 26878 | 50 | 50 | subsample_universe | 38.98 | 38.88 | 39.27 | 111.3 |
++| B5 | 10000 | 8 | 0 | 9000 | 50 | 50 | subsample_universe | 19.93 | 19.71 | 20.87 | 119.3 |
++| B6 | 10000 | 10 | 0 | 9000 | 50 | 50 | on_the_fly | 50.99 | 50.75 | 51.24 | 872.5 |
++
++## Stage wall times (medians over formal runs, seconds)
++
++| bench | input_read | normalize_filter | profile_generation | assignment | permutation | significance | clustering |
++|---|---|---|---|---|---|---|---|
++| B1 | 0.005 | 0.005 | 0.010 | 0.036 | 0.601 | 0.008 | 0.000 |
++| B2 | 0.023 | 0.028 | 0.010 | 0.184 | 3.828 | 0.073 | 0.000 |
++| B3 | 0.044 | 0.049 | 0.010 | 0.357 | 9.943 | 0.165 | 0.000 |
++| B4 | 0.135 | 0.140 | 0.011 | 1.082 | 37.025 | 0.477 | 0.000 |
++| B5 | 0.063 | 0.067 | 1.645 | 0.492 | 17.451 | 0.158 | 0.000 |
++| B6 | 0.077 | 0.082 | 20.634 | 1.257 | 28.372 | 0.193 | 0.000 |
+diff --git a/docs/01_expert_plan_review.md b/docs/01_expert_plan_review.md
+index 735319e..fd5c1b8 100644
+--- a/docs/01_expert_plan_review.md
++++ b/docs/01_expert_plan_review.md
+@@ -1,4 +1,5 @@
+ # STEMpy 专家方案评审（第 1 轮）
++（品牌注记，2026-09-19：品牌自 2026-09-19 起写作 pySTEMTC（py 小写、STEM 大写、tc 小写）；文中 PySTEMTC 为当时记录）
+ 
+ > 命名迁移注记（第 4 轮，2026-09-19）：项目正式定名 **PySTEMTC**（PyPI/import/CLI = `pystemtc`）。本文为历史评审记录，保留当时"STEMpy"称谓；现行命名与最高原则以 `03_v1_implementation_spec.md` §0 为准。
+ 
+diff --git a/docs/02_core_callgraph_and_v1_architecture.md b/docs/02_core_callgraph_and_v1_architecture.md
+index 35b295a..0e2c374 100644
+--- a/docs/02_core_callgraph_and_v1_architecture.md
++++ b/docs/02_core_callgraph_and_v1_architecture.md
+@@ -1,4 +1,5 @@
+ # STEM v1.3.14 核心计算链调用图 与 PySTEMTC V1 架构设计
++（品牌注记，2026-09-19：品牌自 2026-09-19 起写作 pySTEMTC（py 小写、STEM 大写、tc 小写）；文中 PySTEMTC 为当时记录）
+ 
+ - 日期：2026-09-19
+ - 证据基础：`D:\stem\sourcecode`（edu/cmu/cs/sb/{stem,core}）。所有 file:line 均可直接回溯。
+diff --git a/docs/03_v1_implementation_spec.md b/docs/03_v1_implementation_spec.md
+index 3c959eb..56318e2 100644
+--- a/docs/03_v1_implementation_spec.md
++++ b/docs/03_v1_implementation_spec.md
+@@ -10,6 +10,7 @@
+ ## 0. 冷冻区（frozen，不得再议）
+ 
+ - **命名（第 4 轮定案，2026-09-19）**：品牌/项目 **PySTEMTC**；PyPI distribution、import namespace、CLI 统一 **`pystemtc`**。PyPI JSON API 实证 404 未被占用（2026-09-19；另 `stempy` = Kitware 4D-STEM 数据包 v3.5.0、`pystem` = 显微 STEM 成像包，均确定被占，来自专家检索 + `stempy` 已独立复核）。**发布前必须再走一次 PyPI 实时接口确认，不能把"检索不到"当成占坑成功**。仓库目录 2026-09-19 起为 `D:\stem\pySTEMtc`（用户主动由 `D:\stem\STEMpy` 更名，详见 §1.8）；c09/c10/c11 fixture 配置内嵌 `STEMpy/tests/...` 生成期路径，属冻结证据，**配置内容不改**，解析由 `test_golden.py::_resolve` 的 basename 兜底维护。
++  - **第 6 轮 dated 修订（2026-09-19，品牌大小写铁律）**：品牌自本注记起写作 **pySTEMTC**（py 小写、STEM 大写、tc 小写）。上文及历史文档中的 "PySTEMTC" 为当时记录，不作追溯改写。PyPI distribution / import namespace / CLI **`pystemtc`（全小写）不变**，且不参与品牌大小写规则——新写代码 docstring、文档标题与发布物料一律用 pySTEMTC。
+ - 许可证 **GPL-3.0**（衍生自 GPLv3 的 STEM，源码头保留 Ernst/Patek/Bar-Joseph 归属）。
+ - **最高原则（Compatibility First，第 4 轮冻结）**：PySTEMTC 首先是 **Java STEM v1.3.14 time-course 计算核心的 headless Python 兼容实现**，而不是一个重新设计的 time-course 算法包。本地 STEM v1.3.14 是唯一行为 oracle；所有设计争议先问"Java v1.3.14 到底怎么做"，不问"Python 里通常怎么做"。
+ - **优先级链**：Java v1.3.14 行为一致性 > 代码简洁 > 运行速度 > Pythonic 写法。
+@@ -26,6 +27,9 @@
+   - **C 文件输出**：Java/Python 的 genetable、profiletable 除明确允许的浮点末位外逐字段一致（实现物 = M4 `write_java_tables`，tab 分隔复刻 batch 两表；**不占用 `to_csv` 名称**——那留给未来 Pythonic CSV 导出，两件事不混。截至 M2 已达成 A 全 exact + B 打印值全等）。
+   - 延续映射：旧 Level A ≈ A（含 observed tally）；旧 Level B ≈ B。
+ - **M2 正式 GO（第 5 轮门禁结论，2026-09-19）**。M3 范围锁定：c13/c14 金标扩展（§1.9）→ git+CI → benchmark（只测不优化）→ 其余收尾；**不扩大范围、不做新功能**。
++- **writer 字符集裁决（第 6 轮冻结，Compatibility C 的 writer 轮定义）**：C 层"逐字段一致"按**解码后字段**判定（decoded-table-field exact）；字节级 exact 仅在**显式 pin 字符集与行分隔符**时承诺；默认跟随**运行平台默认字符集**（镜像 Java 行为）并提供 `encoding=` 参数（实现于 writer 轮）。∞（U+221E）/−∞/U+FFFD 的渲染形式无条件复刻（§1.7）。
++- **CLI 裁决（第 6 轮冻结）**：退出码 `0` 成功 / `1` 运行失败 / `2` 用法错误；`batch` 模式单配置失败**继续**处理其余配置，结束时以 stderr 汇总失败清单；stdout 保持**简洁成功摘要**（行数级镜像 Java batch，不做逐 gene 噪声输出）。
++- **M5 warning 冻结原文（第 6 轮冻结；第 5 轮 N9 定组合、第 6 轮定文案）**：仅 `none_add0 × permute_t0=True` 组合弹运行时 warning，**只 warn 一次**，文案冻结为："`normalize='none_add0'` with `permute_t0=True` permutes the synthetic zero baseline together with observed time points, matching legacy STEM v1.3.14 behavior. Interpret permutation-based significance with caution." legacy 有放回置换不逐次警告，由 metadata（`legacy_with_replacement`/`permutation_mode`）+ 文档承载；warning 只说明风险，不改计算结果。
+ 
+ ## 1. 常温区（pinned this round）
+ 
+@@ -61,7 +65,7 @@
+ **复刻要点清单（预审补充，全部有源码依据）**：
+ 1. RNG 向量文件不记录 `nextInt` 的 bound（=1000，见 `tools/gen_java_rng.js`），测试需硬编码。
+ 2. genetable 值格式 = Java `NumberFormat(Locale.ENGLISH)`、min=max 小数位 2（HALF_EVEN 舍入、|v|≥1000 千分位分组、微小负数输出 `-0.00`）；集成测试按**字符串级**比对。
+-3. genetable 最后一列**无条件输出**（缺失单元格在最后一列不输出空串，ST.java:3021-3033）——M4 `to_csv` 时注意。
++3. genetable 最后一列**无条件输出**（缺失单元格在最后一列不输出空串，ST.java:3021-3033）——M4 `write_java_tables` 时注意。
+ 4. 重复相关性过滤：对 **(R+1)·R/2 对（含主文件 vs 重复）** 等权平均、严格 `>` 阈值、掩码=双方 pma 非零、方差 0 或无重叠 → 0（DataSetCore.java:850-879，Util.java:481-526）。
+ 5. 重复文件必须与主文件原始行对齐（errorcheck，ST.java:2365-2402）；DataFrame 输入的重复/空白 spot 名按 dataio 同规则抛错（DataSetCore.java:429-452）。
+ 6. 阈值过滤两种变体均扫描列 1..T−1 并用 `≥`，max−min 变体的 dmax/dmin 初始化为 0（DataSetCore.java:983-1038）；log 模式 ≤0 只清 pma、保留解析值（:530-536）。
+@@ -185,6 +189,11 @@ cluster_profiles(sig, models, thr, percentile_thr) -> clusters   # 贪心球：
+ - `_stats.correlation` 的 `math.sqrt` 已改为 Java 语义（负输入 → NaN 而非异常，Util.java:468/522）——M2 post-review MAJOR 修复，M1 遗留问题。
+ - 第 5 轮评审发现的 2 个 P2（M3 修复，2026-09-19）：①`test_golden.py` 的 Profile ID 断言实为 `str(i)`（枚举索引）而非 `str(rec.id)`——engine 现恰好 `ProfileRecord(id=i)` 故 M2 结论不受影响，但字段此前未被测试保护，已改为 `str(rec.id)`。②`legacy_with_replacement` 原仅 `subsample_universe` 为 true——`on_the_fly` 同为跨置换可重复的有放回抽样，语义改为 `mode != "exact"`（exact/subsample_universe/on_the_fly → false/true/true），并同步 permutation.py docstring。
+ - **M3 c14 挖出的新输出 quirk（2026-09-19，jjs + 文件字节双重实证）**：genetable 数值列的 `NumberFormat`（DecimalFormatSymbols 文档默认）——`+Inf` → `∞`（U+221E）、`-Inf` → `-∞`、`NaN` → U+FFFD（M2 既有钉死，长度 1）。Java 以**平台默认字符集**写表（oracle 机 = GBK），c14 冻结参照表中 `-∞` 为字节 `2D A1 DE`；金标 reader 因此以 GBK 确定性解码（ASCII 表两种解码等价）。`write_java_tables`（M4，Compatibility C）必须复刻 ∞/U+FFFD 形式并按运行平台默认字符集写文件。
++- **P1 数据保真修复（第 6 轮，2026-09-19）：`filtering.merge_repeats` 无重复直通**。根因：Java 在**无重复数据集时不调用 mergeDataSets**——different_periods 直接 `theDataSetsMerged = theDataSet1`（ST.java:2577），same_period 的 else 分支是 `new STEM_DataSet(theDataSet1, theDataSet1)`（ST.java:2669，两参构造为纯引用别名包装、零语义）；而 Python `build_stem_dataset`（dataset.py，两种模式各一处，:146/:182 一带）无条件调用 `merge_repeats(...)`，`_cellwise_median` 的 `np.zeros` 初始化把 all-missing 格的存储 payload（log 模式 −Inf/NaN、normalize 模式 `0.0−v0` 填充值）清成幻影 `0.0`。修复 = `merge_repeats` 函数体首行 `if not repeats: return main`（两模式共用）+ docstring 记录两处 ST.java 行号。
++  - **发现路径**：c13 幸存基因中缺末列者恰 **27 行**，`GENE_0008 values[-1]` 应为 `0.0−(−0.948)=0.948`（normalize 填充值）却落成 `0.0`；c14 单 spot 组 `S_0003/S_0015/S_0027/S_0039` 的 `values[-1]==-Inf` 同被零化。修复前红证据：`S_0003: values[-1]=0.0`、`GENE_0008: values[-1]=0.0`。
++  - **安全性论证（下游四点）**：① `_normalized` 的 `log_ratio` 以 `copy=True` 产出新数组，直通无别名突变风险；② `merge_duplicates` 只读输入；③ 置换重参照消费 `ds.spot_data`（直通后位等不变——有重复路径本就原样引用 `main.spot_data`）；④ assign/filter_threshold 均按 pma 掩码读取。回归后 c01–c07/c12（有重复配置）gene_data 逐位不变，14 配置金标全绿。
++  - **偏离专家字面设计（"只补一条保真通道"）的理由**：`return main` 让 Python 矩阵与 Java 本身对齐（同一引用语义，而非再造一份"保真合并矩阵"），并消除"合并矩阵"与"主矩阵"两份真相的同步负担——Java 的无重复路径本就是零语义别名，直通是最忠实的复刻。
++  - 回归保护：`tests/test_golden_branches.py` 两条 payload 断言（c14/c13 锚点）+ `tests/test_units.py` 三条直通契约（`is main`、all-missing 保留 primary 值、无突变；**无 oracle，钉契约**，docstring 已注明）。
+ 
+ ## 1.8 命名迁移记录（第 4 轮）
+ 
+@@ -223,18 +232,68 @@ cluster_profiles(sig, models, thr, percentile_thr) -> clusters   # 贪心球：
+ - Data_File 前缀约定：新配置写当前目录名 `pySTEMtc/tests/golden/data/...`；冻结 c09/c10/c11 的 `STEMpy/` 前缀保留为证据（HANDOFF D8）。
+ - 测试侧分支到达断言（`tests/test_golden_branches.py`，评审要求：不能只靠"测试通过"）：c13 断言 `permutation_mode=="on_the_fly"` 且 ≥10 个幸存基因的基因级序列含 ≥1 个非 t0 缺失；c14 断言 `permutation_mode=="subsample_universe"` 且组 1、组 2 各 ≥10 个幸存 dup 基因（spot 级在索引 2 缺失）。
+ 
+-## 2. 解冻区（unfrozen，M2 首批对拍后定稿）
++## 1.10 M4 schema v2 与发布工程（第 6 轮定案，2026-09-19）
+ 
+-1. **Level B 容差数值**（暂定：expected 相对 1e-12；p-value 相对 1e-9 或绝对 1e-12；correlation 相对 1e-12）——B 已冻结为两层（§0），容差条款降级为 B-internal 兜底，不再作为主判据。
++### to_dict schema v2 全字段表（实现：`src/pystemtc/result.py` + `engine.py`）
++
++顶层键**恰为** 11 个：`schema_version`、`reference`、`generator`、`config`、`input`、`metadata`、`profiles`、`gene_assignments`、`filtered_genes`、`clusters`、`timing`。
++
++| 顶层键 | 内容 |
++|---|---|
++| `schema_version` | `2` |
++| `reference` | `{"software": "STEM", "version": "1.3.14"}`（行为 oracle，与 package 版本解耦） |
++| `generator` | `{"package": "pystemtc", "version": <pystemtc.__version__>}`（package 名全小写，不参与品牌大小写） |
++| `config` | **显式列举**的 STEMConfig 算法参数键（`result.CONFIG_ALGORITHM_KEYS` = STEMConfig 全部字段 − `data_file`/`repeat_files`；不用 asdict 剔除法——新增配置字段必须是一次显式 schema 决策） |
++| `input` | `{"form": "path"\|"dataframe"\|"stem_dataset"`, `data_file`, `repeat_files`, `time_points(= ds.sample_labels)`}；STEMDataset 直注入形态 `data_file=None, repeat_files=[]`（该路径忽略 replicates 参数，engine docstring 已注明）；DataFrame 形态 `repeat_files=[None×n]` |
++| `metadata` | `input_form`、`num_genes`、`num_time_points`、`num_profiles`、`num_candidate_profiles`、`permutation_mode`、`n_permutations_requested`、`legacy_with_replacement`、`sample_labels`、`timestamp`（fit 时一次，UTC ISO-8601 秒级）；**删除** `software`/`reference` 两键（职责上移 `reference`/`generator`） |
++| `profiles` | 原样（id/model/cluster/n_assigned/n_expected/p_value/significant） |
++| `gene_assignments` | `{gene, probe, profile_ids: list[int], values, value_states, present}`；旧 `profile` 字符串字段由 `profile_ids` 列表取代 |
++| `filtered_genes` | `[{gene, probe, reason}]`（reason ∈ repeat_correlation/missing/threshold；无 Java 对应物，不进 `write_java_tables`） |
++| `clusters` | `[{"id": i, "profile_ids": [...]}]`（i = 生成序） |
++| `timing` | 引擎 stage 计时 dict（键表见下） |
++
++### `_encode_value(value, present)` 真值表（钉死优先级：先按存储 double 分类）
++
++| 存储 double | state | values |
++|---|---|---|
++| NaN（任意 pma） | `"nan"` | `null` |
++| +Inf（任意 pma） | `"positive_infinity"` | `null` |
++| −Inf（任意 pma） | `"negative_infinity"` | `null` |
++| 有限 & pma==0 | `"missing"` | 保留填充值 |
++| 有限 & pma!=0 | `"finite"` | 原值 |
++
++不变量：`values[i] is null ⟺ state ∈ {nan, positive_infinity, negative_infinity}`；`state=="missing" ⟹ present==False`、`present==True ⟹ state=="finite"`。注意非有限 payload 落在 all-missing 格（present=False）时 state 报**非有限态**而非 missing——c14 的 `present=False ∧ −Inf` 是实证（S_0003 末列）。**`values` 是无损 Java 矩阵快照，writer（未来）消费 STEMResult 内部 floats**：由 (value, state, present) 足以精确重建 Java genetable 任意格（含 `""` 判别、`-0.00` 与 ∞/U+FFFD 渲染）。严格 JSON：`json.dumps(to_dict, allow_nan=False)` 必须成功（测试钉死）。
++
++### timing 键表（`time.perf_counter` 纯环绕现有阶段，不改任何计算顺序）
++
++`input_read`（主 + 重复读取）→ `normalize_filter`（`build_stem_dataset` 全链）→ `profile_generation` → `assignment`（含 tallyassignments）→ `permutation`（expected_counts）→ `significance`（p 值 + 校正）→ `clustering` → `wall`（fit 全程）；STEMDataset 直注入路径前两键报 `0.0`。
++
++### 版本矩阵定案
++
++`requires-python = ">=3.11"`；CI matrix 3.11/3.12/3.14（Windows+Ubuntu）；依赖下界 `numpy>=2.4,<3`、`pandas>=3.0,<4` 为 **provisional**（冻结条件 = 3.11 CI 绿，即 M6 push 之后）。
++
++### 发布文案模板
++
++> "Compatibility-first implementation. The V1.0 core intentionally favors behavioral fidelity over vectorized performance." + 实测数字（`tools/bench.py` 三档：300×6T 0.3s / 3000×10T 29.3s / 10000×10T 53.5s wall；peak RSS ~870 MiB）。**870 MiB 不得称轻量**。
++
++### format_java_double 晋升
++
++现居 `tests/test_integration_fixture.py` 的 `NumberFormat` 复刻（ENGLISH、2 位小数 HALF_EVEN、千分位、NaN→U+FFFD、±Inf→±∞）在 **writer 轮**晋升 `src/pystemtc/javaformat.py`（`write_java_tables` 的格式化内核），测试改为 import，行为不变。
++
++
++## 2. 解冻区（unfrozen，按第 6 轮专家裁决重整，2026-09-19）
++
++1. ~~**Level B 容差数值**（暂定：expected 相对 1e-12；p-value 相对 1e-9 或绝对 1e-12；correlation 相对 1e-12）~~——**第 6 轮划除**：容差数值条款被第 5 轮 B 两层冻结（§0）取代；B-internal 不设数值容差判据（B-output 打印值全等为主判据，B-internal 只要求不得反噬 A 层）。
+ 2. ~~金标最终严格度~~ **已于第 5 轮定案并移回冷冻区**：B 两层定义（B-output exact / B-internal 不得反噬 A），见 §0。
+ 3. `STEMInput.from_gene_matrix(...)` 便利构造器（V1.1；不得污染 compatibility core）。
+ 4. 裸 `ndarray` 入口（V1.1+，需自带 schema 参数）。
+ 5. K-means（V1.1，`Random(2211)` + reservoir sampling 复刻）。
+ 6. ~~PyPI distribution 名与 import namespace~~ **已于第 4 轮定案并移回冷冻区**：`pystemtc`（PyPI API 404 实证 2026-09-19）；发布前复检要求已写入 §0。
+-7. **JRE 17 漂移 characterization**：**阻塞——本机仅有 JRE 1.8.0_451，无 JRE 17**；待用户安装后执行（结果只作附加证据，JRE 8 仍是唯一 oracle）。**warning 策略（第 5 轮定案）**：仅 `none_add0 × permute_t0=True` 组合弹运行时 warning；legacy 有放回置换**不**逐次警告，由 metadata（`legacy_with_replacement`/`permutation_mode`）+ 文档承载；warning 只说明风险，不改计算结果。
+-8. **CLI（第 5 轮定向，M4）**：`pystemtc run --config <defaults.txt> --output <dir>` 与 `pystemtc batch --config-dir <dir> --output <dir>` 双入口；defaults.txt 保持一等输入；不复刻 `stem.jar -b` 的历史参数形式。
+-9. **`to_dict()` schema（第 5 轮升级 P2；M4 实现【前】送专家评审）**：须定义 `schema_version`、`reference_version="STEM 1.3.14"`、非有限数编码——倾向 JSON 层规范化为 `null`（严格 JSON 不接受 NaN/Infinity 字面量；c13/c14 将产生 ±Inf/NaN 中间量，此项更必要），在场性由既有 mask/status 字段表达，不依赖非标准 `NaN` 字面量。
+-10. **Python 版本矩阵（第 5 轮 P2，发布前必须解决）**：`requires-python>=3.10` 但只在 3.14.3 实测；依赖下限需复核——专家引用 PyPI：numpy 2.4.6 本身要求 Python ≥3.11（M4 定版本下限时以 PyPI 实测为准）。
++7. **JRE 17 漂移 characterization**：**阻塞——本机仅有 JRE 1.8.0_451，无 JRE 17**；待用户安装后执行（结果只作附加证据，JRE 8 仍是唯一 oracle）。warning 策略已定案，**文案冻结原文移入 §0**（M5 warning 冻结），本条只保留 JRE 17 环境阻塞本身。
++8. **CLI（第 5 轮定向，M4）**：`pystemtc run --config <defaults.txt> --output <dir>` 与 `pystemtc batch --config-dir <dir> --output <dir>` 双入口；defaults.txt 保持一等输入；不复刻 `stem.jar -b` 的历史参数形式。**裁决（退出码 0/1/2、batch 失败继续 + stderr 总结、stdout 简洁成功）已落 §0，实现于下一轮（CLI 轮）**。
++9. **`to_dict()` schema**：**v2 已实现（第 6 轮，全字段表见 §1.10），待 post-review 最终确认**；v1 提案（schema_version=1、`reference_version` 字符串、仅 null 编码）被 v2 取代（`reference` 对象、`value_states` 五态、`profile_ids`、`input`/`timing` 段）。
++10. **Python 版本矩阵**：**requires-python 已定 3.11**（第 6 轮，CI matrix 3.11/3.12/3.14）；**依赖下界 provisional**（`numpy>=2.4,<3`、`pandas>=3.0,<4`），冻结条件 = 3.11 CI 绿（M6 push 后）。
++11. **Compatibility C 数据保真**：数据通道已修复（P1，§1.7：无重复直通 + all-missing payload 保留），`write_java_tables` 的 writer 实现待下一轮；本条在 writer 实现获认可后关闭。
+ 
+ ## 3. 工件与再生成
+ 
+diff --git a/docs/04_m1_report_and_open_questions.md b/docs/04_m1_report_and_open_questions.md
+index 2386f9c..8fd9afe 100644
+--- a/docs/04_m1_report_and_open_questions.md
++++ b/docs/04_m1_report_and_open_questions.md
+@@ -1,4 +1,5 @@
+ # STEMpy M1 结题报告与遗留问题清单（供专家团评审）
++（品牌注记，2026-09-19：品牌自 2026-09-19 起写作 pySTEMTC（py 小写、STEM 大写、tc 小写）；文中 PySTEMTC 为当时记录）
+ 
+ > 命名迁移注记（第 4 轮，2026-09-19）：项目正式定名 **PySTEMTC**（PyPI/import/CLI = `pystemtc`）。本文为 M1 阶段历史记录，保留当时"STEMpy"称谓；现行命名与最高原则以 `03_v1_implementation_spec.md` §0 为准。
+ 
+diff --git a/docs/05_m2_report_and_open_questions.md b/docs/05_m2_report_and_open_questions.md
+index 1607af6..b92694c 100644
+--- a/docs/05_m2_report_and_open_questions.md
++++ b/docs/05_m2_report_and_open_questions.md
+@@ -1,4 +1,5 @@
+ # PySTEMTC M2 结题报告与遗留问题清单（供专家团评审）
++（品牌注记，2026-09-19：品牌自 2026-09-19 起写作 pySTEMTC（py 小写、STEM 大写、tc 小写）；文中 PySTEMTC 为当时记录）
+ 
+ - 日期：2026-09-19
+ - 范围：第 3 轮 4 个前置 P1 → M2 实现（profiles→assign→permutation→significance→clustering→engine）→ 四道闸门（pre-work review / implementer / 独立 verifier / post-review）→ findings 修复 → 第 4 轮命名定案 → 项目目录更名迁移
+diff --git a/docs/06_m3_round5_report.md b/docs/06_m3_round5_report.md
+index b017be3..7ae9c02 100644
+--- a/docs/06_m3_round5_report.md
++++ b/docs/06_m3_round5_report.md
+@@ -1,4 +1,5 @@
+ # PySTEMTC M3 第 5 轮门禁执行报告
++（品牌注记，2026-09-19：品牌自 2026-09-19 起写作 pySTEMTC（py 小写、STEM 大写、tc 小写）；文中 PySTEMTC 为当时记录）
+ 
+ - 日期：2026-09-19
+ - 范围：第 5 轮评审门禁的执行记录——c13/c14 金标扩展（N2 重设计）、git+CI（N5 P1）、Compatibility B 两层冻结落盘（N1）、N3 benchmark、N4 状态、两个 P2 修复
+@@ -11,7 +12,7 @@
+ | 门禁项（第 5 轮裁决） | 状态 | 证据 |
+ |----|------|------|
+ | c13/c14 重设计 + 生成 + 分支到达断言 | **完成** | 4 张新参照表 + `tests/test_golden_branches.py` 4 断言全过 |
+-| git + 最小跨平台 CI（N5，P1） | **完成**（本地） | git 仓库 2 提交；`.github/workflows/ci.yml`（Win+Ubuntu × Py3.12/3.14）——push 到 GitHub 后生效 |
++| git + 最小跨平台 CI（N5，P1） | **完成**（本地） | git 仓库 2 提交；`.github/workflows/ci.yml`（Win+Ubuntu × Py3.12/3.14）——push 到 GitHub 后生效；跨平台验证以首次 push 后 CI 绿灯为准 |
+ | Compatibility B 两层冻结（N1） | **完成** | spec §0（B-output canonical exact / B-internal 不得反噬 A；反冻结声明） |
+ | N3 benchmark（只测不优化） | **完成** | §4 表（3 档实测 wall + peak RSS） |
+ | N4 JRE 17 characterization | **阻塞** | 本机仅有 JRE 1.8.0_451；待安装后执行 |
+@@ -56,8 +57,8 @@ spots,T,genes,profiles,wall_s,peak_rss_mib
+ 
+ 解读：
+ - 早期 M2 的粗估（"样例 75s、3 万基因小时级"）**明显悲观**：实测 3000×10T 全流程仅 29.3s、10000×10T 仅 53.5s（约 5.9 ms/幸存基因——3.3× 基因数只花 1.8× 时间，大基因数下单位成本摊薄）。此前 HANDOFF 里的 75s 数字应是早期未优化中间版或含 JVM 的对拍口径，以本次实测为准修正记录。
+-- 外推（线性、按 profile 相关计算占比）：3 万基因 × 50 置换 × **50** profile ≈ 3 分钟级；× **500** profile（用户放大参数网格时）≈ 半小时级——远好于此前"小时级"的担忧。**V1 不需要为此优化**（与第 5 轮"不要现在换 Numba/vectorization"一致）。
+-- 内存：peak RSS ~870 MiB 在 10T 两档持平，说明主导项不是 spot 级存储（3000→10000 spots 仅 3.3×数据），而是 profile 候选/置换工作缓冲；对 headless/agent 场景 <1GB 可接受。
++- 外推（线性、按 profile 相关计算占比）：3 万基因 × 50 置换 × **50** profile ≈ 3 分钟级；× **500** profile（用户放大参数网格时）≈ 半小时级——远好于此前"小时级"的担忧。**当前单机 benchmark 未给出 V1.0 必须先优化的理由**（第 6 轮修正注记：原文"V1 不需要为此优化"；与第 5 轮"不要现在换 Numba/vectorization"一致）。
++- 内存：peak RSS 在 10T 两档持平于 **~870 MiB**（含 numpy/pandas 导入；主导项为 profile 候选/置换工作缓冲），说明主导项不是 spot 级存储（3000→10000 spots 仅 3.3×数据）（第 6 轮修正注记：原文"对 headless/agent 场景 <1GB 可接受"改为事实陈述，不做可接受性判断）。
+ - 局限：单机单线程单次测量，无重复试验取方差；Windows-only（Linux 侧数字待 CI/首次 push 后补）。优化决策推迟到专家/用户看过本表之后。
+ 
+ ## 5. N4：JRE 17 characterization——阻塞
+diff --git a/docs/07_m3_report_and_open_questions.md b/docs/07_m3_report_and_open_questions.md
+index 3436e39..8e44f54 100644
+--- a/docs/07_m3_report_and_open_questions.md
++++ b/docs/07_m3_report_and_open_questions.md
+@@ -1,4 +1,5 @@
+ # PySTEMTC M3 结题报告与遗留问题清单（供专家团评审）
++（品牌注记，2026-09-19：品牌自 2026-09-19 起写作 pySTEMTC（py 小写、STEM 大写、tc 小写）；文中 PySTEMTC 为当时记录）
+ 
+ - 日期：2026-09-20
+ - 范围：第 5 轮评审门禁的完整执行（c13/c14 金标扩展、git+CI、B 两层冻结、benchmark、两个 P2 修复）→ 四道闸门（pre-work review GO-with-changes / 实现 / post-work review ACCEPT-with-fixes / 修复回填）
+@@ -10,7 +11,7 @@
+ 
+ ## 1. 一段话总结
+ 
+-M3 把第 5 轮门禁全部执行完毕：**M2 仅剩的两个未覆盖算法交叉分支（on-the-fly × 缺失 × masked correlation；log 重参照 −Inf/NaN quirk × universe 路径）已被分支针对式金标覆盖，105/105 测试通过，14/14 配置 Compatibility A 字符串级 exact + B 打印值全等**。benchmark 实测显示 V1 无需优化（3 万基因外推分钟级）；git 仓库 + 跨平台 CI + GPL-3.0 LICENSE 就位。**算法层工作到此全部完成，项目站在 M4（发布工程）门口**，剩余问题集中在接口设计与发布流程（§4 M1–M8）。
++M3 把第 5 轮门禁全部执行完毕：**M2 仅剩的两个未覆盖算法交叉分支（on-the-fly × 缺失 × masked correlation；log 重参照 −Inf/NaN quirk × universe 路径）已被分支针对式金标覆盖，105/105 测试通过，14/14 配置 Compatibility A 字符串级 exact + B 打印值全等**。benchmark 实测未给出 V1.0 必须先优化的理由（3 万基因外推分钟级）——第 6 轮修正注记：原文"V1 无需优化"为超出单机实测支撑的表述；git 仓库 + CI workflow 就位（跨平台验证以首次 push 后 CI 绿灯为准）+ GPL-3.0 LICENSE 就位。**算法层工作到此全部完成，项目站在 M4（发布工程）门口**，剩余问题集中在接口设计与发布流程（§4 M1–M8）。
+ 
+ ## 2. 结果总结
+ 
+@@ -19,7 +20,7 @@ M3 把第 5 轮门禁全部执行完毕：**M2 仅剩的两个未覆盖算法交
+ | 第 5 轮门禁项 | 状态 | 证据 |
+ |----|------|------|
+ | c13/c14 重设计 + 生成 + 分支到达断言（N2，原方案被驳回） | 完成 | 4 张新参照表（Java batch 产出）+ 4 断言全过；spec §1.9 钉死 |
+-| git + 最小跨平台 CI（N5，升级 P1） | 完成（本地） | 2 提交；`.github/workflows/ci.yml`（Win+Ubuntu × Py3.12/3.14）——push 后生效 |
++| git + 最小跨平台 CI（N5，升级 P1） | 完成（本地） | 2 提交；`.github/workflows/ci.yml`（Win+Ubuntu × Py3.12/3.14）——push 后生效；跨平台验证以首次 push 后 CI 绿灯为准 |
+ | Compatibility B 两层冻结（N1） | 完成 | spec §0：B-output canonical exact / B-internal 不得反噬 A / 反冻结声明 |
+ | N3 benchmark（只测不优化） | 完成 | §2.3 三档实测 |
+ | 两个 P2 修复 | 完成 | `str(rec.id)`；`legacy_with_replacement = mode != "exact"` |
+@@ -50,7 +51,7 @@ spots,T,genes,profiles,wall_s,peak_rss_mib
+ ```
+ 
+ - 早期粗估（"样例 75s、3 万基因小时级"）**按实测修正为悲观**：10000×10T 全流程 53.5s（≈5.9 ms/幸存基因，3.3× 基因数仅 1.8× 时间）。外推 3 万基因 × 50 置换 × 50 profile ≈ 3 分钟级；× 500 profile ≈ 半小时级。
+-- peak RSS 在 10T 两档持平于 ~870 MiB——主导项不是 spot 存储，是 profile 候选/置换缓冲；headless/agent 场景 <1GB 可接受。
++- peak RSS 在 10T 两档持平于 ~870 MiB——主导项不是 spot 存储，是 profile 候选/置换缓冲（第 6 轮修正注记：原文"headless/agent 场景 <1GB 可接受"改为事实陈述，不做可接受性判断）。
+ - 局限：单机单次测量无方差；Windows-only（Linux 数字待 CI）。
+ 
+ ### 2.4 工程状态
+@@ -61,7 +62,7 @@ git main 两提交（`ca312d8` 基线 → `b2b5a92` M3）；CI workflow 就位
+ 
+ 1. **V1 范围内的算法移植已完成**：模型 profile 生成/精选、并列分配、三条置换路径、显著性三校正、聚类、引擎串联——在 14 配置 × 覆盖矩阵（3 标准化 × 3 校正 × 3 置换路径 × 2 重复模式 × percentile × 缺失 × log quirk）上 Compatibility A 全 exact、B 打印值全等。**在已识别的分支范围内，没有已知的未覆盖交叉分支。**
+ 2. **浮点纪律与 quirk 复刻经受住了最刁钻路径的考验**：c14 把 ±Inf/NaN 真实注入 Java 的排序/中位数/相关链，Python 的逐行复刻（Arrays.sort 全序 NaN 排最后、vals 掩码不对称、dcorr=NaN 跳过、`Math.sqrt` NaN 语义）与 Java 字符串级一致——这是对 §1.6/§1.7 钉死语义的最强验证。
+-3. **性能不是 V1 的风险项**：纯 Python 实现 <1GB 内存、万级基因秒-分钟级完成，"先 golden 后优化"的优化空间留给 V1.x 按需启用。
++3. **当前单机 benchmark 未给出 V1.0 必须先优化的理由**（第 6 轮修正注记：原文"性能不是 V1 的风险项"）：纯 Python 实现 peak RSS ~870 MiB（含 numpy/pandas 导入）、万级基因秒-分钟级完成，"先 golden 后优化"的优化空间留给 V1.x 按需启用。
+ 4. **兼容性证据链工程化完成**：金标冻结字节受 git `-text` 保护、增量化生成流程带冻结名单守卫、每条 Java 语义有 file:line 钉死——后续任何回归都可被 105 个测试当场抓获。
+ 5. **诚实的剩余缺口**（不阻塞 M4，但记录在案）：JRE 17 环境（N4）、Linux 平台实测（待 push）、真实大规模数据集（金标仅覆盖样例 + 合成数据）、benchmark 无方差与跨平台数字。
+ 
+diff --git a/pyproject.toml b/pyproject.toml
+index 641bb9e..507b0af 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
+ [project]
+ name = "pystemtc"
+ version = "0.1.0"
+-description = "PySTEMTC - headless Python-compatible implementation of the STEM v1.3.14 time-course core"
+-requires-python = ">=3.10"
++description = "pySTEMTC - headless Python-compatible implementation of the STEM v1.3.14 time-course core"
++requires-python = ">=3.11"
+ license = { text = "GPL-3.0" }
+ dependencies = [
+-    "numpy",
+-    "pandas",
++    "numpy>=2.4,<3",  # provisional per round-6 ruling — freeze after 3.11 CI green
++    "pandas>=3.0,<4",  # provisional per round-6 ruling — freeze after 3.11 CI green
+ ]
+ 
+ [project.optional-dependencies]
+diff --git a/src/pystemtc/__init__.py b/src/pystemtc/__init__.py
+index d2d2ccc..e362345 100644
+--- a/src/pystemtc/__init__.py
++++ b/src/pystemtc/__init__.py
+@@ -1,6 +1,6 @@
+-"""PySTEMTC: a headless Python port of STEM (Short Time-series Expression Miner).
++"""pySTEMTC: a headless Python port of STEM (Short Time-series Expression Miner).
+ 
+-PySTEMTC is a derivative work of STEM v1.3.14 (Java), authored by Jason Ernst,
++pySTEMTC is a derivative work of STEM v1.3.14 (Java), authored by Jason Ernst,
+ Dima Patek and Ziv Bar-Joseph (https://ernstlab.github.io/STEM/).  The original
+ STEM is licensed under GPL-3.0; this port is therefore distributed under the
+ GNU General Public License v3.0 as well.
+diff --git a/src/pystemtc/dataset.py b/src/pystemtc/dataset.py
+index 101f35c..3b20a6a 100644
+--- a/src/pystemtc/dataset.py
++++ b/src/pystemtc/dataset.py
+@@ -133,7 +133,7 @@ def build_stem_dataset(main: SpotSet, repeats: list[SpotSet], mode: str, config)
+         raise STEMTCValueError(
+             "Data must contain at least 2 time points (including a synthetic "
+             "add0 column); the original STEM switches to Gene Ontology "
+-            "enrichment mode for fewer columns, which PySTEMTC does not implement"
++            "enrichment mode for fewer columns, which pySTEMTC does not implement"
+         )
+ 
+     if mode == "different_periods":
+diff --git a/src/pystemtc/engine.py b/src/pystemtc/engine.py
+index 973a506..dd001c1 100644
+--- a/src/pystemtc/engine.py
++++ b/src/pystemtc/engine.py
+@@ -15,12 +15,13 @@ frozen scope); ``Clustering_Method = K-means`` raises
+ 
+ from __future__ import annotations
+ 
++import time
+ from dataclasses import asdict, replace
++from datetime import datetime, timezone
+ from pathlib import Path
+ 
+ import pandas as pd
+ 
+-from . import __version__
+ from .assign import best_assignments
+ from .clustering import cluster_profiles
+ from .config import STEMConfig
+@@ -95,16 +96,39 @@ class STEM:
+     ) -> STEMResult:
+         """Run the full analysis.  ``data`` may be a native STEM tsv/tsv.gz
+         path, a wide DataFrame (required column ``gene``, optional ``spot``,
+-        remaining columns = time points), or a ready :class:`STEMDataset`."""
++        remaining columns = time points), or a ready :class:`STEMDataset`.
++
++        The input shape is captured into ``result.input`` (``form``,
++        ``data_file``, ``repeat_files``, plus ``time_points`` once the
++        dataset is built).  ``result.timing`` records stage wall times in
++        seconds via ``time.perf_counter`` — pure instrumentation wrapped
++        AROUND the unchanged computation order (no stage is reordered or
++        split).  A pre-built :class:`STEMDataset` skips reading/normalizing
++        entirely; ``input_read``/``normalize_filter`` then report ``0.0``.
++        """
+         config = self.config
+         if repeat_mode is not None:
+             config = replace(config, repeat_mode=repeat_mode)
+ 
++        wall_start = time.perf_counter()
++        timing: dict[str, float] = {}
++
+         if isinstance(data, STEMDataset):
+             ds = data
+-            input_form = "stem_dataset"
+-            return self._analyze(ds, config, input_form)
++            input_info = {
++                "form": "stem_dataset",
++                "data_file": None,
++                # Pre-built datasets carry their repeats inside; the
++                # replicates argument is ignored on this path (documented
++                # quirk of the direct-injection form), hence no repeat file
++                # records.
++                "repeat_files": [],
++            }
++            timing["input_read"] = 0.0
++            timing["normalize_filter"] = 0.0
++            return self._analyze(ds, config, input_info, timing, wall_start)
+ 
++        t_read = time.perf_counter()
+         if isinstance(data, pd.DataFrame):
+             main = dataframe_to_spotset(
+                 data,
+@@ -153,15 +177,44 @@ class STEM:
+                         repeat_set=True,
+                     )
+                 )
++        timing["input_read"] = time.perf_counter() - t_read
++
++        # schema-v2 input snapshot: record what fit() was handed, without
++        # claiming anything about paths it did not receive.
++        if input_form == "dataframe":
++            input_info = {
++                "form": "dataframe",
++                "data_file": None,
++                "repeat_files": [None] * len(rep_sources),
++            }
++        else:
++            input_info = {
++                "form": "path",
++                "data_file": str(data),
++                "repeat_files": [
++                    str(rep_source) if rep_source is not None else None
++                    for rep_source in rep_sources
++                ],
++            }
++
++        t_normalize = time.perf_counter()
+         ds = build_stem_dataset(main, repeats, config.repeat_mode, config)
++        timing["normalize_filter"] = time.perf_counter() - t_normalize
+ 
+-        return self._analyze(ds, config, input_form)
++        return self._analyze(ds, config, input_info, timing, wall_start)
+ 
+     # ------------------------------------------------------------------
+-    def _analyze(self, ds: STEMDataset, config: STEMConfig, input_form: str) -> STEMResult:
++    def _analyze(
++        self,
++        ds: STEMDataset,
++        config: STEMConfig,
++        input_info: dict,
++        timing: dict,
++        wall_start: float,
++    ) -> STEMResult:
+         if config.clustering_method != "stem":
+             raise NotImplementedError(
+-                "K-means clustering is not implemented in PySTEMTC V1 "
++                "K-means clustering is not implemented in pySTEMTC V1 "
+                 "(frozen scope; planned for V1.1 with the Random(2211) + "
+                 "reservoir-sampling restart replica)"
+             )
+@@ -171,6 +224,7 @@ class STEM:
+ 
+         self._validate_profile_params(config)
+ 
++        t_stage = time.perf_counter()
+         # generatemodelprofiles (STEM_DataSet.java:766-806)
+         nchoices = 2 * config.max_unit_change + 1
+         if float(nchoices) ** (numcols - 1) < config.candidate_cap:  # :776
+@@ -185,7 +239,9 @@ class STEM:
+             config.max_correlation,
+             config.max_unit_change,
+         )
++        timing["profile_generation"] = time.perf_counter() - t_stage
+ 
++        t_stage = time.perf_counter()
+         # findbestgroupassignments (STEM_DataSet.java:1718-1758)
+         assignments = best_assignments(ds.gene_data, ds.gene_pma, models)
+ 
+@@ -196,13 +252,17 @@ class STEM:
+             dweight = 1.0 / numassigned
+             for pid in row_assignments:
+                 counts[pid] += dweight
++        timing["assignment"] = time.perf_counter() - t_stage
+ 
++        t_stage = time.perf_counter()
+         # computeaveragetally (STEM_DataSet.java:1038-1375)
+         expected, perm_meta = expected_counts(
+             ds, models, config.n_permutations, config.permute_t0
+         )
+         expected_list = [float(v) for v in expected]
++        timing["permutation"] = time.perf_counter() - t_stage
+ 
++        t_stage = time.perf_counter()
+         # computePvaluesAssignments (STEM_DataSet.java:287-335)
+         pvalues = [
+             count_pvalue(counts[i], numrows, expected_list[i] / numrows)
+@@ -214,7 +274,9 @@ class STEM:
+             config.correction,
+             counts=counts,
+         )
++        timing["significance"] = time.perf_counter() - t_stage
+ 
++        t_stage = time.perf_counter()
+         # clusterprofiles (STEM_DataSet.java:870-997)
+         sig_ids = [i for i, sig in enumerate(significant) if sig]
+         clusters = cluster_profiles(
+@@ -229,6 +291,7 @@ class STEM:
+         for cid, members in enumerate(clusters):
+             for pid in members:
+                 cluster_of[pid] = cid
++        timing["clustering"] = time.perf_counter() - t_stage
+ 
+         profiles = [
+             ProfileRecord(
+@@ -248,7 +311,7 @@ class STEM:
+             GeneAssignment(
+                 gene=genes[nrow],
+                 probe=ds.gene_probes[nrow],
+-                profile=";".join(str(pid) for pid in assignments[nrow]),
++                profile_ids=list(assignments[nrow]),
+                 values=[float(v) for v in ds.gene_data[nrow]],
+                 present=[bool(p != 0) for p in ds.gene_pma[nrow]],
+             )
+@@ -256,9 +319,7 @@ class STEM:
+         ]
+ 
+         metadata = {
+-            "software": f"PySTEMTC {__version__}",
+-            "reference": "STEM v1.3.14 (Ernst, Patek, Bar-Joseph)",
+-            "input_form": input_form,
++            "input_form": input_info["form"],
+             "num_genes": numrows,
+             "num_time_points": numcols,
+             "num_profiles": len(models),
+@@ -266,8 +327,14 @@ class STEM:
+             "permutation_mode": perm_meta["permutation_mode"],
+             "n_permutations_requested": perm_meta["n_permutations_requested"],
+             "legacy_with_replacement": perm_meta["legacy_with_replacement"],
++            "sample_labels": list(ds.sample_labels),
++            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+         }
+ 
++        input_record = dict(input_info)
++        input_record["time_points"] = list(ds.sample_labels)
++        timing["wall"] = time.perf_counter() - wall_start
++
+         return STEMResult(
+             profiles=profiles,
+             gene_assignments=gene_assignments,
+@@ -275,6 +342,8 @@ class STEM:
+             clusters=[list(c) for c in clusters],
+             config=asdict(config),
+             metadata=metadata,
++            input=input_record,
++            timing=timing,
+         )
+ 
+     # ------------------------------------------------------------------
+diff --git a/src/pystemtc/errors.py b/src/pystemtc/errors.py
+index 0dd9ed6..7186cb0 100644
+--- a/src/pystemtc/errors.py
++++ b/src/pystemtc/errors.py
+@@ -1,4 +1,4 @@
+-"""Exception types for PySTEMTC.
++"""Exception types for pySTEMTC.
+ 
+ Java STEM signals bad input with ``IllegalArgumentException``; the Python port
+ maps those cases to :class:`STEMTCValueError` so callers can catch a single
+diff --git a/src/pystemtc/filtering.py b/src/pystemtc/filtering.py
+index 194550e..96e2306 100644
+--- a/src/pystemtc/filtering.py
++++ b/src/pystemtc/filtering.py
+@@ -139,7 +139,21 @@ def merge_repeats(main, repeats: list, mode: str):
+     the cross-repeat medians and whose spot content is the main set's.
+     ``same_period``: ``main``/``repeats`` are raw SpotSets (bfullrepeat=false,
+     merge happens BEFORE normalization); returns a merged raw SpotSet.
++
++    No-repeat passthrough (P1 data-fidelity fix, 2026-09-19): when
++    ``repeats`` is empty Java never calls mergeDataSets — different_periods
++    keeps ``theDataSet1`` as-is (ST.java:2577 ``theDataSetsMerged =
++    theDataSet1``) and same_period wraps ``new STEM_DataSet(theDataSet1,
++    theDataSet1)`` (ST.java:2669), a pure reference alias with zero
++    semantics.  Returning ``main`` itself replicates both.  (The pre-fix
++    behaviour ran the cellwise median over a zero-initialized matrix, which
++    rewrote every all-missing cell — e.g. the log-mode ``log(0) = -Inf``
++    payload of a blank cell — to a phantom ``0.0``.)
+     """
++    if mode not in ("same_period", "different_periods"):
++        raise ValueError(f"unknown repeat mode: {mode!r}")
++    if not repeats:
++        return main
+     if mode == "same_period":
+         merged, mpma = _cellwise_median(
+             main.raw_data, main.raw_pma, [r.raw_data for r in repeats], [r.raw_pma for r in repeats]
+@@ -167,7 +181,6 @@ def merge_repeats(main, repeats: list, mode: str):
+             spot_genes=list(main.spot_genes),
+             spot_ids=list(main.spot_ids),
+         )
+-    raise ValueError(f"unknown repeat mode: {mode!r}")
+ 
+ 
+ def repeat_correlation_filter(
+diff --git a/src/pystemtc/result.py b/src/pystemtc/result.py
+index c063d68..191ea3d 100644
+--- a/src/pystemtc/result.py
++++ b/src/pystemtc/result.py
+@@ -1,12 +1,88 @@
+-"""Structured result object for a completed STEM run (spec 02 §B3).
++"""Structured result object for a completed STEM run (spec 02 §B3; to_dict
++schema v2 per spec 03 §1.10).
+ 
+-``to_csv`` (Java-shaped output tables) is deferred to M4; :meth:`to_dict`
+-provides the minimal JSON-compatible snapshot.
++Java-shaped output tables (``write_java_tables``) are deferred to the M4
++writer round; :meth:`STEMResult.to_dict` provides the schema-v2
++JSON-compatible snapshot.  ``gene_assignments`` ``values`` there is a
++lossless snapshot of the Java gene-matrix content (merged medians + the
++all-missing cells' fill payloads); the future writer consumes the internal
++floats of :class:`STEMResult` directly.
+ """
+ 
+ from __future__ import annotations
+ 
+-from dataclasses import dataclass
++import math
++from dataclasses import dataclass, field
++
++from . import __version__
++
++# Algorithm-parameter keys of STEMConfig (config.py) — every field except the
++# two I/O keys ``data_file``/``repeat_files``, which belong to the ``input``
++# section of schema v2.  Enumerated explicitly (spec 03 §1.10) instead of
++# filtering an ``asdict`` copy, so adding a STEMConfig field forces a
++# deliberate schema decision rather than a silent payload change.
++CONFIG_ALGORITHM_KEYS: tuple[str, ...] = (
++    "normalize",
++    "max_missing",
++    "min_abs_expr",
++    "maxmin",
++    "repeat_min_correlation",
++    "spot_included",
++    "repeat_mode",
++    "max_model_profiles",
++    "max_unit_change",
++    "max_correlation",
++    "candidate_cap",
++    "n_permutations",
++    "permute_t0",
++    "alpha",
++    "correction",
++    "cluster_min_correlation",
++    "cluster_corr_percentile",
++    "clustering_method",
++)
++
++
++def _encode_value(value: float, present: bool) -> tuple[str, float | None]:
++    """Classify one stored double for schema v2 (spec 03 §1.10 truth table).
++
++    Priority is pinned: the stored double is classified FIRST, ``present``
++    (the pma mask) only splits the finite branch.
++
++    ==========  ===================  ================================
++    stored      state                values entry
++    ==========  ===================  ================================
++    NaN         "nan"                None
++    +Inf        "positive_infinity"  None
++    -Inf        "negative_infinity"  None
++    finite      present == False     "missing" — fill payload retained
++    finite      present == True      "finite" — original value
++    ==========  ===================  ================================
++
++    Invariants: ``values[i] is None`` iff ``value_states[i]`` is one of
++    nan/positive_infinity/negative_infinity; ``state == "missing"`` implies
++    ``present is False``; ``present is True`` implies ``state == "finite"``.
++    Note the asymmetry: a non-finite payload stored in an all-missing cell
++    (present=False — e.g. the log-mode ``log(0) = -Inf`` route, c14) reports
++    the non-finite state, not "missing", because the state classifies the
++    stored double while ``present`` mirrors the pma mask.
++
++    This is the writer-lossless snapshot semantics of the Java matrix (the
++    Java gene-matrix content = merged medians + the primary row's fill
++    payload in all-missing cells, DataSetCore.java:707-712): from
++    (value, state, present) every Java genetable cell — including the
++    ``""``-vs-formatted distinction, ``-0.00`` and the ∞/U+FFFD renders — can
++    be reconstructed exactly by the M4 writer.
++    """
++    if math.isnan(value):
++        return "nan", None
++    if math.isinf(value):
++        if value > 0:
++            return "positive_infinity", None
++        return "negative_infinity", None
++    if not present:
++        return "missing", value
++    return "finite", value
+ 
+ 
+ @dataclass
+@@ -28,14 +104,14 @@ class GeneAssignment:
+ 
+     gene: str
+     probe: str
+-    profile: str  # assigned profile ids, ";"-joined when tied
+-    values: list[float]  # normalized (post-merge) values, NaN = missing
++    profile_ids: list[int]  # assigned profile ids; several when tied (ascending model-index order)
++    values: list[float]  # normalized (post-merge) stored doubles; may be NaN/±Inf
+     present: list[bool]  # pma != 0 per column
+ 
+ 
+ @dataclass
+ class STEMResult:
+-    """Minimal structured result of :meth:`pystemtc.engine.STEM.fit`."""
++    """Structured result of :meth:`pystemtc.engine.STEM.fit`."""
+ 
+     profiles: list[ProfileRecord]
+     gene_assignments: list[GeneAssignment]
+@@ -43,10 +119,49 @@ class STEMResult:
+     clusters: list[list[int]]  # cluster id -> member profile ids
+     config: dict
+     metadata: dict
++    input: dict = field(default_factory=dict)  # schema-v2 "input" section
++    timing: dict = field(default_factory=dict)  # stage wall times, seconds
+ 
+     def to_dict(self) -> dict:
+-        """JSON-compatible snapshot (M4 will add ``to_csv``)."""
++        """Schema-v2 JSON-compatible snapshot (spec 03 §1.10).
++
++        Top-level keys are exactly: ``schema_version``, ``reference``,
++        ``generator``, ``config``, ``input``, ``metadata``, ``profiles``,
++        ``gene_assignments``, ``filtered_genes``, ``clusters``, ``timing``.
++        Non-finite stored doubles are encoded via :func:`_encode_value`
++        (never NaN/Infinity literals), so
++        ``json.dumps(result.to_dict(), allow_nan=False)`` succeeds.
++        """
++        gene_rows: list[dict] = []
++        for g in self.gene_assignments:
++            values: list[float | None] = []
++            states: list[str] = []
++            for value, present in zip(g.values, g.present):
++                state, encoded = _encode_value(value, present)
++                states.append(state)
++                values.append(encoded)
++            gene_rows.append(
++                {
++                    "gene": g.gene,
++                    "probe": g.probe,
++                    "profile_ids": list(g.profile_ids),
++                    "values": values,
++                    "value_states": states,
++                    "present": list(g.present),
++                }
++            )
++
+         return {
++            "schema_version": 2,
++            "reference": {"software": "STEM", "version": "1.3.14"},
++            "generator": {"package": "pystemtc", "version": __version__},
++            "config": {
++                key: self.config[key]
++                for key in CONFIG_ALGORITHM_KEYS
++                if key in self.config
++            },
++            "input": dict(self.input),
++            "metadata": dict(self.metadata),
+             "profiles": [
+                 {
+                     "id": p.id,
+@@ -59,18 +174,14 @@ class STEMResult:
+                 }
+                 for p in self.profiles
+             ],
+-            "gene_assignments": [
+-                {
+-                    "gene": g.gene,
+-                    "probe": g.probe,
+-                    "profile": g.profile,
+-                    "values": list(g.values),
+-                    "present": list(g.present),
+-                }
+-                for g in self.gene_assignments
++            "gene_assignments": gene_rows,
++            "filtered_genes": [
++                {"gene": gene, "probe": probe, "reason": reason}
++                for gene, probe, reason in self.filtered_genes
+             ],
+-            "filtered_genes": [list(t) for t in self.filtered_genes],
+-            "clusters": [list(c) for c in self.clusters],
+-            "config": dict(self.config),
+-            "metadata": dict(self.metadata),
++            "clusters": [
++                {"id": i, "profile_ids": list(members)}
++                for i, members in enumerate(self.clusters)
++            ],
++            "timing": dict(self.timing),
+         }
+diff --git a/tests/test_golden.py b/tests/test_golden.py
+index 8f5a44d..2accb7c 100644
+--- a/tests/test_golden.py
++++ b/tests/test_golden.py
+@@ -29,6 +29,7 @@ import pytest
+ from pystemtc.config import STEMConfig
+ from pystemtc.engine import STEM
+ from pystemtc.javaformat import double_to_sz, java_double_to_string
++from test_integration_fixture import format_java_double
+ 
+ GOLDEN = Path(__file__).parent / "golden"
+ CONFIGS = GOLDEN / "java_configs"
+@@ -199,9 +200,44 @@ def test_golden_genetable(case):
+             failures.append(f"row {i} gene: got {gene.gene!r} want {row[0]!r}")
+         if row[1] != gene.probe:
+             failures.append(f"row {i} probe: got {gene.probe!r} want {row[1]!r}")
+-        if row[2] != gene.profile:
+-            failures.append(f"row {i} Profile: got {gene.profile!r} want {row[2]!r}")
++        if row[2] != ";".join(str(p) for p in gene.profile_ids):
++            failures.append(f"row {i} Profile: got {gene.profile_ids!r} want {row[2]!r}")
+ 
+     assert not failures, (
+         f"{case}: genetable Level A mismatches:\n" + "\n".join(failures[:20])
+     )
++
++
++@pytest.mark.parametrize("case", ALL_CASES)
++def test_golden_genetable_values(case):
++    """Full-field value-column check for all 14 configs (extends the M1
++    string-level check of test_integration_fixture.py to every golden case,
++    driven through the engine result).  Missing cells print "" except in the
++    final column, which Java prints unconditionally (ST.java:3021-3033) —
++    including the c14 non-finite payloads (-Inf -> "-∞", NaN -> U+FFFD) and
++    the c13 normalize-mode fill values kept by the no-repeat passthrough."""
++    result = _run_case(case)
++    header, rows = _read_gene_table(case)
++    numcols = len(header) - 3
++
++    assert header[3:] == result.metadata["sample_labels"], (
++        f"{case}: genetable header != metadata sample_labels "
++        f"{result.metadata['sample_labels']!r}"
++    )
++
++    failures = []
++    for i, (row, gene) in enumerate(zip(rows, result.gene_assignments)):
++        for j in range(numcols):
++            if j < numcols - 1 and not gene.present[j]:
++                expected = ""
++            else:
++                expected = format_java_double(gene.values[j])
++            if row[3 + j] != expected:
++                failures.append(
++                    f"row {i} ({gene.gene}) col {header[3 + j]}: "
++                    f"got {row[3 + j]!r} want {expected!r}"
++                )
++
++    assert not failures, (
++        f"{case}: genetable value-column mismatches:\n" + "\n".join(failures[:20])
++    )
+diff --git a/tests/test_golden_branches.py b/tests/test_golden_branches.py
+index 4cbbac1..214dede 100644
+--- a/tests/test_golden_branches.py
++++ b/tests/test_golden_branches.py
+@@ -8,6 +8,7 @@ N2 requires branch-targeted fixtures plus test-side arrival proof.
+ Also pins the round-5 ``legacy_with_replacement`` semantics (spec 03 §1.7).
+ """
+ 
++import math
+ from pathlib import Path
+ 
+ from test_golden import _run_case
+@@ -100,3 +101,43 @@ def test_c14_log_missing_reaches_universe_path():
+     # (:1221-1275) would be untested.
+     assert len(g1) >= 10, f"only {len(g1)} G1 survivors"
+     assert len(g2) >= 10, f"only {len(g2)} G2 survivors"
++
++
++# --- P1 data-fidelity regression: no-repeat passthrough (spec 03 §1.7) ---
++
++
++def test_c14_last_column_payload_preserved():
++    """With no repeats Java never calls mergeDataSets, so the stored payload
++    of all-missing cells must reach ``gene_assignments`` unchanged.  Pre-fix
++    the unconditional cellwise median re-baked the gene matrix from a
++    zero-initialized array and wiped the log(0)=-Inf payload of c14's
++    blank-last-column singles to a phantom 0.0."""
++    result = _run_case("c14_log_missing")
++    by_gene = {g.gene: g for g in result.gene_assignments}
++    # singles with one blank in the LAST time column: log mode keeps the
++    # blank cell's log(0) = -Inf payload, merged pma = 0 -> present False
++    for gene in ("S_0003", "S_0015", "S_0027", "S_0039"):
++        g = by_gene[gene]
++        assert g.values[-1] == -math.inf, f"{gene}: values[-1]={g.values[-1]!r}"
++        assert g.present[-1] is False, f"{gene}: present[-1]={g.present[-1]!r}"
++    # bit-equality guards: cells that were never all-missing are untouched
++    g2 = by_gene["G2_0050"]
++    assert g2.values[2] == -0.5144122086581921, f"G2_0050: values[2]={g2.values[2]!r}"
++    assert g2.present[2] is True
++    g1 = by_gene["G1_0000"]
++    assert g1.values[-1] == -0.04991621757653608, f"G1_0000: values[-1]={g1.values[-1]!r}"
++
++
++def test_c13_last_column_payload_preserved():
++    """c13 survivors missing the LAST column must keep the normalize-mode
++    fill payload (0.0 - v0) rather than a phantom 0.0 written by the
++    pre-fix zero-initialized repeat merge."""
++    result = _run_case("c13_synth10_missing")
++    by_gene = {g.gene: g for g in result.gene_assignments}
++    g = by_gene["GENE_0008"]
++    assert g.values[-1] == 0.948, f"GENE_0008: values[-1]={g.values[-1]!r}"
++    assert g.present[-1] is False, f"GENE_0008: present[-1]={g.present[-1]!r}"
++    missing_last = [x for x in result.gene_assignments if not x.present[-1]]
++    assert len(missing_last) == 27, (
++        f"{len(missing_last)} survivors missing the last column, expected 27"
++    )
+diff --git a/tests/test_result_schema.py b/tests/test_result_schema.py
+new file mode 100644
+index 0000000..19d4aaf
+--- /dev/null
++++ b/tests/test_result_schema.py
+@@ -0,0 +1,264 @@
++"""Schema-v2 contract tests for ``STEMResult.to_dict`` (spec 03 §1.10).
++
++Covers the top-level key set, the ``_encode_value`` five-state truth table,
++the lossless encoding of c14's non-finite payloads, the config/input/metadata
++shapes, the timing stage keys, strict-JSON compatibility and determinism
++(two ``to_dict()`` calls on the same result are identical, timestamp
++included).  Golden-driven cases reuse the cached runs of
++``test_golden._run_case``; a toy engine run pins the ``stem_dataset`` input
++form.
++"""
++
++import dataclasses
++import json
++import math
++import re
++
++import numpy as np
++import pytest
++
++from pystemtc.config import STEMConfig
++from pystemtc.dataset import SpotSet, build_stem_dataset
++from pystemtc.engine import STEM
++from pystemtc.result import CONFIG_ALGORITHM_KEYS, STEMResult, _encode_value
++from test_golden import _run_case
++
++TIMING_KEYS = {
++    "input_read",
++    "normalize_filter",
++    "profile_generation",
++    "assignment",
++    "permutation",
++    "significance",
++    "clustering",
++    "wall",
++}
++
++TOP_LEVEL_KEYS = {
++    "schema_version",
++    "reference",
++    "generator",
++    "config",
++    "input",
++    "metadata",
++    "profiles",
++    "gene_assignments",
++    "filtered_genes",
++    "clusters",
++    "timing",
++}
++
++
++def _by_gene(payload):
++    return {row["gene"]: row for row in payload["gene_assignments"]}
++
++
++def _toy_result() -> STEMResult:
++    """3 genes x 4 time points; gene B is flat (all-zero after normalize)."""
++    data = np.array(
++        [[1.0, 2.0, 3.0, 4.0], [5.0, 5.0, 5.0, 5.0], [2.0, 4.0, 6.0, 8.0]],
++        dtype=np.float64,
++    )
++    pma = np.full((3, 4), 2, dtype=np.int8)
++    main = SpotSet(
++        raw_data=data,
++        raw_pma=pma,
++        spot_ids=["S1", "S2", "S3"],
++        gene_ids=["A", "B", "C"],
++        probe_ids=["S1", "S2", "S3"],
++        sample_labels=["0h", "1h", "2h", "4h"],
++    )
++    cfg = STEMConfig(normalize="normalize", min_abs_expr=0.0, maxmin=False)
++    ds = build_stem_dataset(main, [], "different_periods", cfg)
++    return STEM(n_permutations=0).fit(ds)
++
++
++# 1 --- top-level keys and constants -----------------------------------------
++
++
++def test_top_level_keys_and_constants():
++    payload = _run_case("c14_log_missing").to_dict()
++    assert set(payload) == TOP_LEVEL_KEYS
++    assert payload["schema_version"] == 2
++    assert payload["reference"] == {"software": "STEM", "version": "1.3.14"}
++    assert payload["generator"]["package"] == "pystemtc"
++    assert isinstance(payload["generator"]["version"], str)
++
++
++# 2 --- gene_assignments row shape + c14 non-finite payload -------------------
++
++
++def test_gene_assignments_shape_and_c14_negative_infinity():
++    payload = _run_case("c14_log_missing").to_dict()
++    rows = payload["gene_assignments"]
++    assert rows
++    for row in rows:
++        assert set(row) == {
++            "gene",
++            "probe",
++            "profile_ids",
++            "values",
++            "value_states",
++            "present",
++        }
++        assert all(isinstance(p, int) and not isinstance(p, bool) for p in row["profile_ids"])
++        assert len(row["values"]) == len(row["value_states"]) == len(row["present"])
++        for state, value in zip(row["value_states"], row["values"]):
++            assert (value is None) == (state in ("nan", "positive_infinity", "negative_infinity"))
++    s3 = _by_gene(payload)["S_0003"]
++    assert s3["values"][-1] is None
++    assert s3["value_states"][-1] == "negative_infinity"
++    assert s3["present"][-1] is False
++
++
++# 3 --- _encode_value truth table ---------------------------------------------
++
++
++def test_encode_value_truth_table_and_length_invariant():
++    # non-finite states win over present, whatever the pma mask says
++    assert _encode_value(math.nan, True) == ("nan", None)
++    assert _encode_value(math.nan, False) == ("nan", None)
++    assert _encode_value(math.inf, True) == ("positive_infinity", None)
++    assert _encode_value(math.inf, False) == ("positive_infinity", None)
++    assert _encode_value(-math.inf, True) == ("negative_infinity", None)
++    assert _encode_value(-math.inf, False) == ("negative_infinity", None)
++    # finite branch splits on present; the fill payload is retained
++    assert _encode_value(0.948, False) == ("missing", 0.948)
++    assert _encode_value(-0.5, True) == ("finite", -0.5)
++    assert _encode_value(0.0, True) == ("finite", 0.0)
++    # structural invariant: state/value lists come out per input cell
++    values = [math.nan, math.inf, -math.inf, 1.5, -2.5]
++    present = [False, True, True, False, True]
++    states = []
++    encoded = []
++    for value, is_present in zip(values, present):
++        state, out = _encode_value(value, is_present)
++        states.append(state)
++        encoded.append(out)
++    assert len(states) == len(encoded) == len(values) == len(present)
++    assert states == [
++        "nan",
++        "positive_infinity",
++        "negative_infinity",
++        "missing",
++        "finite",
++    ]
++    assert encoded == [None, None, None, 1.5, -2.5]
++
++
++# 4 --- strict JSON -----------------------------------------------------------
++
++
++def test_to_dict_is_strict_json():
++    for case in ("c14_log_missing", "c13_synth10_missing"):
++        payload = _run_case(case).to_dict()
++        text = json.dumps(payload, allow_nan=False)  # must not raise
++        assert '"schema_version": 2' in text
++
++
++# 5 --- determinism -----------------------------------------------------------
++
++
++def test_to_dict_deterministic():
++    result = _run_case("c14_log_missing")
++    assert result.to_dict() == result.to_dict()
++
++
++# 6 --- profile ids survive into the schema -----------------------------------
++
++
++def test_c14_s0003_profile_ids():
++    payload = _run_case("c14_log_missing").to_dict()
++    assert _by_gene(payload)["S_0003"]["profile_ids"] == [7]
++
++
++# 7 --- input.time_points ------------------------------------------------------
++
++
++def test_c14_input_time_points():
++    payload = _run_case("c14_log_missing").to_dict()
++    assert payload["input"]["time_points"] == ["0h", "1h", "2h", "4h", "8h", "24h"]
++
++
++# 8 --- config / input shapes --------------------------------------------------
++
++
++def test_config_and_input_shapes():
++    result = _run_case("c14_log_missing")
++    payload = result.to_dict()
++    stemconfig_keys = {f.name for f in dataclasses.fields(STEMConfig)}
++    expected = stemconfig_keys - {"data_file", "repeat_files"}
++    assert set(payload["config"]) == expected
++    assert set(payload["config"]) == set(CONFIG_ALGORITHM_KEYS)
++    assert set(payload["input"]) == {"form", "data_file", "repeat_files", "time_points"}
++    assert payload["input"]["form"] == "path"
++    assert payload["input"]["data_file"].endswith("synth6d.txt")
++    assert result.metadata["sample_labels"] == payload["input"]["time_points"]
++
++
++# 9 --- clusters / filtered_genes shapes ---------------------------------------
++
++
++def test_clusters_and_filtered_genes_shapes():
++    payload = _run_case("c01_guillemin_core").to_dict()
++    clusters = payload["clusters"]
++    assert clusters, "c01 must produce at least one cluster"
++    assert any(c["profile_ids"] for c in clusters)
++    for i, cluster in enumerate(clusters):
++        assert cluster["id"] == i
++        assert cluster["profile_ids"]
++    # profiles carrying a cluster id must be members of that cluster
++    members_by_id = {c["id"]: set(c["profile_ids"]) for c in clusters}
++    for profile in payload["profiles"]:
++        cid = profile["cluster"]
++        if cid != -1:
++            assert profile["id"] in members_by_id[cid]
++    for row in payload["filtered_genes"]:
++        assert set(row) == {"gene", "probe", "reason"}
++        assert row["reason"] in {"repeat_correlation", "missing", "threshold"}
++
++
++# 10 --- metadata keys ----------------------------------------------------------
++
++
++def test_metadata_keys():
++    payload = _run_case("c14_log_missing").to_dict()
++    meta = payload["metadata"]
++    for key in (
++        "num_genes",
++        "num_time_points",
++        "num_profiles",
++        "input_form",
++        "timestamp",
++        "sample_labels",
++    ):
++        assert key in meta, f"metadata missing {key!r}"
++    assert "software" not in meta
++    assert "reference" not in meta
++    assert meta["input_form"] == "path"
++    # UTC ISO-8601, second precision (datetime.isoformat(timespec="seconds"))
++    assert re.fullmatch(
++        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00", meta["timestamp"]
++    )
++
++
++# 11 --- toy engine run: stem_dataset form + timing ------------------------------
++
++
++def test_toy_run_input_form_and_timing():
++    result = _toy_result()
++    assert isinstance(result, STEMResult)
++    payload = result.to_dict()
++    assert payload["input"]["form"] == "stem_dataset"
++    assert payload["input"]["data_file"] is None
++    assert payload["input"]["repeat_files"] == []
++    assert payload["input"]["time_points"] == ["0h", "1h", "2h", "4h"]
++    assert set(payload["timing"]) == TIMING_KEYS
++    assert all(v >= 0.0 for v in payload["timing"].values())
++    # stem_dataset path skips reading/normalizing; both pre-stages report 0.0
++    assert payload["timing"]["input_read"] == 0.0
++    assert payload["timing"]["normalize_filter"] == 0.0
++    assert payload["timing"]["wall"] >= payload["timing"]["permutation"]
++    assert re.fullmatch(
++        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00", payload["metadata"]["timestamp"]
++    )
+diff --git a/tests/test_units.py b/tests/test_units.py
+index 5383b3f..1b2dce3 100644
+--- a/tests/test_units.py
++++ b/tests/test_units.py
+@@ -1,5 +1,6 @@
+ """Hand-computed unit tests for the M1 chain (DoD M1-2)."""
+ 
++import math
+ from pathlib import Path
+ 
+ import numpy as np
+@@ -364,6 +365,83 @@ def test_merge_repeats_same_period_raw_median_before_normalize():
+     assert gt.probes == ["S1;S2"]
+ 
+ 
++# ------------------------------------------------- no-repeat passthrough (P1)
++
++
++def test_merge_repeats_no_repeats_passthrough_different_periods():
++    """No-repeat passthrough contract (P1 fix, spec 03 §1.7): with zero
++    repeats Java never calls mergeDataSets (ST.java:2577 keeps
++    ``theDataSet1``), so the merged table IS the main table and all-missing
++    cells keep the primary row's stored payload.  Constructed with a
++    log-mode negative-value-missing cell (the loader keeps the negative
++    value and marks pma=0, DataSetCore.java:530-533 -> log(negative) = NaN):
++    pre-fix the zero-initialized median matrix zeroed it, post-fix the NaN
++    payload survives.  No Java oracle exists for this isolated call shape
++    (Java skips the call entirely); this pins the contract, not an
++    oracle-verified value."""
++    main = _gene_table(
++        data=[[0.0, 1.5, math.nan]],
++        pma=[[2, 2, 0]],
++        genes=["G"],
++        probes=["P1"],
++    )
++    merged = merge_repeats(main, [], "different_periods")
++    assert merged is main
++    assert merged.pma[0].tolist() == [2, 2, 0]
++    assert math.isnan(merged.data[0, 2])
++    assert merged.data[0, :2].tolist() == [0.0, 1.5]
++
++
++def test_merge_repeats_no_repeats_passthrough_same_period():
++    """Same-period analogue: raw SpotSet passthrough keeps the raw payload of
++    missing cells (log-mode negative marked missing at read, value kept)."""
++    main = _spotset(
++        data=[[2.0, -1.0, 0.5]],
++        pma=[[2, 0, 2]],
++        spots=["S1"],
++        genes=["G"],
++    )
++    merged = merge_repeats(main, [], "same_period")
++    assert merged is main
++    assert merged.raw_pma[0].tolist() == [2, 0, 2]
++    assert merged.raw_data[0].tolist() == [2.0, -1.0, 0.5]
++
++
++def test_merge_repeats_no_repeats_leaves_main_unmutated():
++    """Passthrough must not mutate the main table (bit-for-bit before/after),
++    guarding against future copy-and-rebake implementations."""
++    main = _gene_table(
++        data=[[0.0, 1.5, -math.inf], [0.0, 2.5, math.nan]],
++        pma=[[2, 2, 0], [2, 2, 2]],
++        genes=["A", "B"],
++        probes=["P1", "P2"],
++    )
++    data_before = main.data.copy()
++    pma_before = main.pma.copy()
++    spot_before = main.spot_data.copy()
++    spot_pma_before = main.spot_pma.copy()
++    merged = merge_repeats(main, [], "different_periods")
++    assert merged is main
++    assert np.array_equal(merged.data, data_before, equal_nan=True)
++    assert np.array_equal(merged.pma, pma_before)
++    assert np.array_equal(merged.spot_data, spot_before, equal_nan=True)
++    assert np.array_equal(merged.spot_pma, spot_pma_before)
++
++
++def test_merge_repeats_rejects_unknown_mode_even_without_repeats():
++    """Mode validation is hoisted above the passthrough so the internal
++    contract (unknown mode raises) does not silently narrow for the
++    no-repeat call shape."""
++    main = _gene_table(
++        data=[[0.0, 1.5]],
++        pma=[[2, 2]],
++        genes=["G"],
++        probes=["P1"],
++    )
++    with pytest.raises(ValueError, match="unknown repeat mode"):
++        merge_repeats(main, [], "bogus")
++
++
+ # -------------------------------------------------------- repeat correlation
+ 
+ 
+diff --git a/tests/test_units_m2.py b/tests/test_units_m2.py
+index 7aab428..efe2976 100644
+--- a/tests/test_units_m2.py
++++ b/tests/test_units_m2.py
+@@ -206,7 +206,7 @@ def test_engine_tally_weights_and_result():
+     assert total == 3.0
+     # the flat gene B ties with EVERY profile -> fractional 1/k weights
+     flat_row = next(g for g in result.gene_assignments if g.gene == "B")
+-    tied_ids = [int(t) for t in flat_row.profile.split(";")]
++    tied_ids = list(flat_row.profile_ids)
+     assert len(tied_ids) == len(result.profiles)
+     expected_fraction = 1.0 / len(result.profiles)
+     assert any(
+@@ -214,10 +214,10 @@ def test_engine_tally_weights_and_result():
+     )
+     # genetable Profile string of the non-flat genes has no ties
+     a_row = next(g for g in result.gene_assignments if g.gene == "A")
+-    assert ";" not in a_row.profile
++    assert len(a_row.profile_ids) == 1
+     # gene A and C are proportional -> identical argmax
+     c_row = next(g for g in result.gene_assignments if g.gene == "C")
+-    assert a_row.profile == c_row.profile
++    assert a_row.profile_ids == c_row.profile_ids
+ 
+ 
+ def test_engine_metadata_and_to_dict():

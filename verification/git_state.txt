@@ -1,0 +1,22 @@
+=== git log (HEAD) ===
+a8dbb22 chore: packaging/CI/docs per round-6 rulings; brand iron law pySTEMTC
+d10577f feat(benchmarks): re-runnable core benchmark harness (round-6 named grid)
+fd59579 feat(result): to_dict schema v2 + per-stage timing (round-6 M1 rulings)
+51f5d64 fix(data): preserve Java genetable last-column payload for no-repeat datasets (P1)
+fc38b13 docs: M3 closing report with round-6 decision asks (to_dict schema proposal, export charset, CLI details, python floor)
+b2b5a92 M3 round-5 gate: c13/c14 branch-targeted golden fixtures (on-the-fly x missing, log re-reference -Inf/NaN quirk), branch-arrival assertions, bench tool, P2 fixes (str(rec.id), legacy_with_replacement semantics)
+ca312d8 PySTEMTC M2 baseline: engine at 12/12 golden configs (A exact, B printed-exact), round-5 rulings recorded, GPL-3.0 LICENSE, CI workflow + float-discipline AST guard
+
+=== git status ===
+?? verification/
+(empty = clean)
+
+=== diffstat fc38b13..HEAD ===
+ src/pystemtc/filtering.py                          |  15 +-
+ src/pystemtc/result.py                             | 153 ++++++-
+ tests/test_golden.py                               |  40 +-
+ tests/test_golden_branches.py                      |  41 ++
+ tests/test_result_schema.py                        | 264 ++++++++++++
+ tests/test_units.py                                |  78 ++++
+ tests/test_units_m2.py                             |   6 +-
+ 27 files changed, 1335 insertions(+), 74 deletions(-)
