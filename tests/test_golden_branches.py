@@ -8,6 +8,7 @@ N2 requires branch-targeted fixtures plus test-side arrival proof.
 Also pins the round-5 ``legacy_with_replacement`` semantics (spec 03 §1.7).
 """
 
+import math
 from pathlib import Path
 
 from test_golden import _run_case
@@ -100,3 +101,43 @@ def test_c14_log_missing_reaches_universe_path():
     # (:1221-1275) would be untested.
     assert len(g1) >= 10, f"only {len(g1)} G1 survivors"
     assert len(g2) >= 10, f"only {len(g2)} G2 survivors"
+
+
+# --- P1 data-fidelity regression: no-repeat passthrough (spec 03 §1.7) ---
+
+
+def test_c14_last_column_payload_preserved():
+    """With no repeats Java never calls mergeDataSets, so the stored payload
+    of all-missing cells must reach ``gene_assignments`` unchanged.  Pre-fix
+    the unconditional cellwise median re-baked the gene matrix from a
+    zero-initialized array and wiped the log(0)=-Inf payload of c14's
+    blank-last-column singles to a phantom 0.0."""
+    result = _run_case("c14_log_missing")
+    by_gene = {g.gene: g for g in result.gene_assignments}
+    # singles with one blank in the LAST time column: log mode keeps the
+    # blank cell's log(0) = -Inf payload, merged pma = 0 -> present False
+    for gene in ("S_0003", "S_0015", "S_0027", "S_0039"):
+        g = by_gene[gene]
+        assert g.values[-1] == -math.inf, f"{gene}: values[-1]={g.values[-1]!r}"
+        assert g.present[-1] is False, f"{gene}: present[-1]={g.present[-1]!r}"
+    # bit-equality guards: cells that were never all-missing are untouched
+    g2 = by_gene["G2_0050"]
+    assert g2.values[2] == -0.5144122086581921, f"G2_0050: values[2]={g2.values[2]!r}"
+    assert g2.present[2] is True
+    g1 = by_gene["G1_0000"]
+    assert g1.values[-1] == -0.04991621757653608, f"G1_0000: values[-1]={g1.values[-1]!r}"
+
+
+def test_c13_last_column_payload_preserved():
+    """c13 survivors missing the LAST column must keep the normalize-mode
+    fill payload (0.0 - v0) rather than a phantom 0.0 written by the
+    pre-fix zero-initialized repeat merge."""
+    result = _run_case("c13_synth10_missing")
+    by_gene = {g.gene: g for g in result.gene_assignments}
+    g = by_gene["GENE_0008"]
+    assert g.values[-1] == 0.948, f"GENE_0008: values[-1]={g.values[-1]!r}"
+    assert g.present[-1] is False, f"GENE_0008: present[-1]={g.present[-1]!r}"
+    missing_last = [x for x in result.gene_assignments if not x.present[-1]]
+    assert len(missing_last) == 27, (
+        f"{len(missing_last)} survivors missing the last column, expected 27"
+    )

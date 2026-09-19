@@ -29,6 +29,7 @@ import pytest
 from pystemtc.config import STEMConfig
 from pystemtc.engine import STEM
 from pystemtc.javaformat import double_to_sz, java_double_to_string
+from test_integration_fixture import format_java_double
 
 GOLDEN = Path(__file__).parent / "golden"
 CONFIGS = GOLDEN / "java_configs"
@@ -199,9 +200,44 @@ def test_golden_genetable(case):
             failures.append(f"row {i} gene: got {gene.gene!r} want {row[0]!r}")
         if row[1] != gene.probe:
             failures.append(f"row {i} probe: got {gene.probe!r} want {row[1]!r}")
-        if row[2] != gene.profile:
-            failures.append(f"row {i} Profile: got {gene.profile!r} want {row[2]!r}")
+        if row[2] != ";".join(str(p) for p in gene.profile_ids):
+            failures.append(f"row {i} Profile: got {gene.profile_ids!r} want {row[2]!r}")
 
     assert not failures, (
         f"{case}: genetable Level A mismatches:\n" + "\n".join(failures[:20])
+    )
+
+
+@pytest.mark.parametrize("case", ALL_CASES)
+def test_golden_genetable_values(case):
+    """Full-field value-column check for all 14 configs (extends the M1
+    string-level check of test_integration_fixture.py to every golden case,
+    driven through the engine result).  Missing cells print "" except in the
+    final column, which Java prints unconditionally (ST.java:3021-3033) —
+    including the c14 non-finite payloads (-Inf -> "-∞", NaN -> U+FFFD) and
+    the c13 normalize-mode fill values kept by the no-repeat passthrough."""
+    result = _run_case(case)
+    header, rows = _read_gene_table(case)
+    numcols = len(header) - 3
+
+    assert header[3:] == result.metadata["sample_labels"], (
+        f"{case}: genetable header != metadata sample_labels "
+        f"{result.metadata['sample_labels']!r}"
+    )
+
+    failures = []
+    for i, (row, gene) in enumerate(zip(rows, result.gene_assignments)):
+        for j in range(numcols):
+            if j < numcols - 1 and not gene.present[j]:
+                expected = ""
+            else:
+                expected = format_java_double(gene.values[j])
+            if row[3 + j] != expected:
+                failures.append(
+                    f"row {i} ({gene.gene}) col {header[3 + j]}: "
+                    f"got {row[3 + j]!r} want {expected!r}"
+                )
+
+    assert not failures, (
+        f"{case}: genetable value-column mismatches:\n" + "\n".join(failures[:20])
     )

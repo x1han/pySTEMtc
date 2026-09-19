@@ -206,7 +206,7 @@ def test_engine_tally_weights_and_result():
     assert total == 3.0
     # the flat gene B ties with EVERY profile -> fractional 1/k weights
     flat_row = next(g for g in result.gene_assignments if g.gene == "B")
-    tied_ids = [int(t) for t in flat_row.profile.split(";")]
+    tied_ids = list(flat_row.profile_ids)
     assert len(tied_ids) == len(result.profiles)
     expected_fraction = 1.0 / len(result.profiles)
     assert any(
@@ -214,10 +214,10 @@ def test_engine_tally_weights_and_result():
     )
     # genetable Profile string of the non-flat genes has no ties
     a_row = next(g for g in result.gene_assignments if g.gene == "A")
-    assert ";" not in a_row.profile
+    assert len(a_row.profile_ids) == 1
     # gene A and C are proportional -> identical argmax
     c_row = next(g for g in result.gene_assignments if g.gene == "C")
-    assert a_row.profile == c_row.profile
+    assert a_row.profile_ids == c_row.profile_ids
 
 
 def test_engine_metadata_and_to_dict():

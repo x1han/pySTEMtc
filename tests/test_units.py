@@ -1,5 +1,6 @@
 """Hand-computed unit tests for the M1 chain (DoD M1-2)."""
 
+import math
 from pathlib import Path
 
 import numpy as np
@@ -362,6 +363,83 @@ def test_merge_repeats_same_period_raw_median_before_normalize():
     # median(0,0)=0, median(1,1)=1, median(2.5,2)=2.25
     assert gt.data[0].tolist() == [0.0, 1.0, 2.25]
     assert gt.probes == ["S1;S2"]
+
+
+# ------------------------------------------------- no-repeat passthrough (P1)
+
+
+def test_merge_repeats_no_repeats_passthrough_different_periods():
+    """No-repeat passthrough contract (P1 fix, spec 03 §1.7): with zero
+    repeats Java never calls mergeDataSets (ST.java:2577 keeps
+    ``theDataSet1``), so the merged table IS the main table and all-missing
+    cells keep the primary row's stored payload.  Constructed with a
+    log-mode negative-value-missing cell (the loader keeps the negative
+    value and marks pma=0, DataSetCore.java:530-533 -> log(negative) = NaN):
+    pre-fix the zero-initialized median matrix zeroed it, post-fix the NaN
+    payload survives.  No Java oracle exists for this isolated call shape
+    (Java skips the call entirely); this pins the contract, not an
+    oracle-verified value."""
+    main = _gene_table(
+        data=[[0.0, 1.5, math.nan]],
+        pma=[[2, 2, 0]],
+        genes=["G"],
+        probes=["P1"],
+    )
+    merged = merge_repeats(main, [], "different_periods")
+    assert merged is main
+    assert merged.pma[0].tolist() == [2, 2, 0]
+    assert math.isnan(merged.data[0, 2])
+    assert merged.data[0, :2].tolist() == [0.0, 1.5]
+
+
+def test_merge_repeats_no_repeats_passthrough_same_period():
+    """Same-period analogue: raw SpotSet passthrough keeps the raw payload of
+    missing cells (log-mode negative marked missing at read, value kept)."""
+    main = _spotset(
+        data=[[2.0, -1.0, 0.5]],
+        pma=[[2, 0, 2]],
+        spots=["S1"],
+        genes=["G"],
+    )
+    merged = merge_repeats(main, [], "same_period")
+    assert merged is main
+    assert merged.raw_pma[0].tolist() == [2, 0, 2]
+    assert merged.raw_data[0].tolist() == [2.0, -1.0, 0.5]
+
+
+def test_merge_repeats_no_repeats_leaves_main_unmutated():
+    """Passthrough must not mutate the main table (bit-for-bit before/after),
+    guarding against future copy-and-rebake implementations."""
+    main = _gene_table(
+        data=[[0.0, 1.5, -math.inf], [0.0, 2.5, math.nan]],
+        pma=[[2, 2, 0], [2, 2, 2]],
+        genes=["A", "B"],
+        probes=["P1", "P2"],
+    )
+    data_before = main.data.copy()
+    pma_before = main.pma.copy()
+    spot_before = main.spot_data.copy()
+    spot_pma_before = main.spot_pma.copy()
+    merged = merge_repeats(main, [], "different_periods")
+    assert merged is main
+    assert np.array_equal(merged.data, data_before, equal_nan=True)
+    assert np.array_equal(merged.pma, pma_before)
+    assert np.array_equal(merged.spot_data, spot_before, equal_nan=True)
+    assert np.array_equal(merged.spot_pma, spot_pma_before)
+
+
+def test_merge_repeats_rejects_unknown_mode_even_without_repeats():
+    """Mode validation is hoisted above the passthrough so the internal
+    contract (unknown mode raises) does not silently narrow for the
+    no-repeat call shape."""
+    main = _gene_table(
+        data=[[0.0, 1.5]],
+        pma=[[2, 2]],
+        genes=["G"],
+        probes=["P1"],
+    )
+    with pytest.raises(ValueError, match="unknown repeat mode"):
+        merge_repeats(main, [], "bogus")
 
 
 # -------------------------------------------------------- repeat correlation

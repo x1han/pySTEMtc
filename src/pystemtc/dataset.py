@@ -133,7 +133,7 @@ def build_stem_dataset(main: SpotSet, repeats: list[SpotSet], mode: str, config)
         raise STEMTCValueError(
             "Data must contain at least 2 time points (including a synthetic "
             "add0 column); the original STEM switches to Gene Ontology "
-            "enrichment mode for fewer columns, which PySTEMTC does not implement"
+            "enrichment mode for fewer columns, which pySTEMTC does not implement"
         )
 
     if mode == "different_periods":

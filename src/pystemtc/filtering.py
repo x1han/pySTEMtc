@@ -139,7 +139,21 @@ def merge_repeats(main, repeats: list, mode: str):
     the cross-repeat medians and whose spot content is the main set's.
     ``same_period``: ``main``/``repeats`` are raw SpotSets (bfullrepeat=false,
     merge happens BEFORE normalization); returns a merged raw SpotSet.
+
+    No-repeat passthrough (P1 data-fidelity fix, 2026-09-19): when
+    ``repeats`` is empty Java never calls mergeDataSets — different_periods
+    keeps ``theDataSet1`` as-is (ST.java:2577 ``theDataSetsMerged =
+    theDataSet1``) and same_period wraps ``new STEM_DataSet(theDataSet1,
+    theDataSet1)`` (ST.java:2669), a pure reference alias with zero
+    semantics.  Returning ``main`` itself replicates both.  (The pre-fix
+    behaviour ran the cellwise median over a zero-initialized matrix, which
+    rewrote every all-missing cell — e.g. the log-mode ``log(0) = -Inf``
+    payload of a blank cell — to a phantom ``0.0``.)
     """
+    if mode not in ("same_period", "different_periods"):
+        raise ValueError(f"unknown repeat mode: {mode!r}")
+    if not repeats:
+        return main
     if mode == "same_period":
         merged, mpma = _cellwise_median(
             main.raw_data, main.raw_pma, [r.raw_data for r in repeats], [r.raw_pma for r in repeats]
@@ -167,7 +181,6 @@ def merge_repeats(main, repeats: list, mode: str):
             spot_genes=list(main.spot_genes),
             spot_ids=list(main.spot_ids),
         )
-    raise ValueError(f"unknown repeat mode: {mode!r}")
 
 
 def repeat_correlation_filter(
