@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pystemtc"
+version = "0.1.0"
+description = "PySTEMTC - headless Python-compatible implementation of the STEM v1.3.14 time-course core"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0" }
+dependencies = [
+    "numpy",
+    "pandas",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

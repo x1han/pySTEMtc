@@ -1,0 +1,69 @@
+Processing c01_guillemin_core.txt
+Generating all candidate model profiles
+Maximum correlation between model profiles: 0.839
+Number of selected genes is 2137
+......................
+Minimum correlation for clustering based on percentile: -1.00
+Processing c02_t0fixed.txt
+Generating all candidate model profiles
+Maximum correlation between model profiles: 0.839
+Number of selected genes is 2137
+......................
+Minimum correlation for clustering based on percentile: -1.00
+Processing c03_lognorm.txt
+Generating all candidate model profiles
+Maximum correlation between model profiles: 0.839
+Number of selected genes is 3496
+...................................
+Minimum correlation for clustering based on percentile: -1.00
+Processing c04_add0.txt
+Generating all candidate model profiles
+Maximum correlation between model profiles: 0.739
+Number of selected genes is 3107
+................................
+Minimum correlation for clustering based on percentile: -1.00
+Processing c05_fdr.txt
+Generating all candidate model profiles
+Maximum correlation between model profiles: 0.839
+Number of selected genes is 2137
+......................
+Minimum correlation for clustering based on percentile: -1.00
+Processing c06_nocorr.txt
+Generating all candidate model profiles
+Maximum correlation between model profiles: 0.839
+Number of selected genes is 2137
+......................
+Minimum correlation for clustering based on percentile: -1.00
+Processing c07_sameperiod.txt
+Generating all candidate model profiles
+Maximum correlation between model profiles: 0.839
+Number of selected genes is 2862
+.............................
+Processing c08_norepeat.txt
+Generating all candidate model profiles
+Maximum correlation between model profiles: 0.839
+Number of selected genes is 2948
+..............................
+Processing c09_synth6.txt
+Generating all candidate model profiles
+Maximum correlation between model profiles: 0.739
+Number of selected genes is 177
+..
+Processing c10_synth6_allperms.txt
+Generating all candidate model profiles
+Maximum correlation between model profiles: 0.739
+Number of selected genes is 177
+..
+Processing c11_synth10.txt
+Sampling Candidate Model Profiles
+Maximum correlation between model profiles: 0.459
+Number of selected genes is 106
+..
+Processing c12_percentile.txt
+Generating all candidate model profiles
+Maximum correlation between model profiles: 0.839
+Number of selected genes is 2137
+......................
+Minimum correlation for clustering based on percentile: 0.40
+
+--- stderr ---

@@ -1,0 +1,2 @@
+# Frozen golden evidence must stay byte-identical: never normalize EOLs.
+tests/golden/** -text
