@@ -153,7 +153,9 @@ def expected_counts(
     ``numrows / ntotalassignments`` (:1371-1374) and the metadata carries
     ``permutation_mode`` (``exact`` | ``subsample_universe`` |
     ``on_the_fly``), ``n_permutations_requested`` and
-    ``legacy_with_replacement`` per spec 03 §1.6.
+    ``legacy_with_replacement`` per spec 03 §1.6 (round-5 semantics: true
+    whenever permutations are drawn with replacement — ``subsample_universe``
+    and ``on_the_fly`` — false only for ``exact``).
     """
     numcols = int(ds.gene_data.shape[1])
     numrows = int(ds.gene_data.shape[0])
@@ -450,6 +452,9 @@ def expected_counts(
     meta = {
         "permutation_mode": mode,
         "n_permutations_requested": n_perms,
-        "legacy_with_replacement": mode == "subsample_universe",
+        # on_the_fly draws each permutation independently, so repeats across
+        # permutations are possible there too — sampling is with replacement
+        # for every mode except exact (round-5 review, spec 03 §1.7).
+        "legacy_with_replacement": mode != "exact",
     }
     return np.asarray(expected, dtype=np.float64), meta

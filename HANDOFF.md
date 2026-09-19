@@ -84,7 +84,7 @@
 
 ```text
 项目     PySTEMTC (pystemtc) — STEM v1.3.14 time-course 核心的 Python 兼容实现
-状态     M2 GO（第5轮）；96/96→103 测试；12→14 金标配置 A exact + B 两层定义
+状态     M2 GO（第5轮）；M3 进行中：105/105 测试；14 金标配置 A exact + B 两层定义
 oracle   D:\stem\stem.jar + D:\stem\sourcecode (v1.3.14, JRE 1.8.0_451)
 代码     D:\stem\pySTEMtc（git 仓库，main 分支）  规范 docs/03（§1.9=c13/c14 设计）
 验证     cd /d/stem/pySTEMtc && python -m pytest -q

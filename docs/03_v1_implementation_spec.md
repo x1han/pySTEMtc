@@ -184,6 +184,7 @@ cluster_profiles(sig, models, thr, percentile_thr) -> clusters   # 贪心球：�
 - M2 实现期发现并复刻的 2 个新 quirk：①`Util.getmedian` 用 `Arrays.sort` 双精度全序——NaN 排最后；log 模式重参照时 `vals[]` 只按 `pma[ncol]` 掩码、不掩码 `pma[nbegin]`（:1235/:1269 vs :1207），故 NaN/±Inf 真的会进入中位数（post-review 已逐行复核该路径，确认修复忠实）；②期望计数缩放是 `(expected·numrows)/ntotal`（:1373），乘除顺序影响 1 ulp。
 - `_stats.correlation` 的 `math.sqrt` 已改为 Java 语义（负输入 → NaN 而非异常，Util.java:468/522）——M2 post-review MAJOR 修复，M1 遗留问题。
 - 第 5 轮评审发现的 2 个 P2（M3 修复，2026-09-19）：①`test_golden.py` 的 Profile ID 断言实为 `str(i)`（枚举索引）而非 `str(rec.id)`——engine 现恰好 `ProfileRecord(id=i)` 故 M2 结论不受影响，但字段此前未被测试保护，已改为 `str(rec.id)`。②`legacy_with_replacement` 原仅 `subsample_universe` 为 true——`on_the_fly` 同为跨置换可重复的有放回抽样，语义改为 `mode != "exact"`（exact/subsample_universe/on_the_fly → false/true/true），并同步 permutation.py docstring。
+- **M3 c14 挖出的新输出 quirk（2026-09-19，jjs + 文件字节双重实证）**：genetable 数值列的 `NumberFormat`（DecimalFormatSymbols 文档默认）——`+Inf` → `∞`（U+221E）、`-Inf` → `-∞`、`NaN` → U+FFFD（M2 既有钉死，长度 1）。Java 以**平台默认字符集**写表（oracle 机 = GBK），c14 冻结参照表中 `-∞` 为字节 `2D A1 DE`；金标 reader 因此以 GBK 确定性解码（ASCII 表两种解码等价）。`write_java_tables`（M4，Compatibility C）必须复刻 ∞/U+FFFD 形式并按运行平台默认字符集写文件。
 
 ## 1.8 命名迁移记录（第 4 轮）
 
@@ -202,23 +203,23 @@ cluster_profiles(sig, models, thr, percentile_thr) -> clusters   # 贪心球：�
 ### c13_synth10_missing（on-the-fly × 缺失 × masked correlation）
 
 - 新数据文件 `synth10m.txt`：T=10，300 spots（**新文件**，不改 synth10.txt），值 N(0,1) 固定种子（normalize 模式允许负值），保留 synth() 的 dup_every=10 重复结构。
-- **确定性缺失模式**：行 i%3==2 在 0 基时间索引 (i%9)+1（9 个非 t0 列轮转）置空；t0 永不缺失。i≡11 (mod 30) 的行既是重复组第二成员又含缺失 → 被 `Math.max` 合并救活（DataSetCore.java:716-723，merged pma 取 max），其余 ~90 行呈基因级缺失。
+- **确定性缺失模式**：行 i%3==2 在 0 基时间索引 (i%9)+1（该行集取值 {3,6,9}，三列轮转）置空；t0 永不缺失。i≡11 (mod 30) 的行既是重复组第二成员又含缺失 → 被 `Math.max` 合并救活（DataSetCore.java:716-723，merged pma 取 max），其余 ~90 行呈基因级缺失。
 - 配置 = c11 基础上仅改：`Data_File`（synth10m）、`Maximum_Number_of_Missing_Values=1`。
-- 目标分支：on-the-fly 置换（STEM_DataSet.java:1043 判定 T=10≥9）+ 基线缺失合法性检查（:1223 `currpmavalues[currperm[0]]!=0`，每缺失基因期望 ~5/50 置换被跳过）+ 置换中 masked correlation。
+- 目标分支：on-the-fly 置换（STEM_DataSet.java:1043 判定 T=10≥9）+ 基线缺失合法性检查（:1207 `currpmavalues[currperm[0]]!=0`，每缺失基因期望 ~5/50 置换被跳过）+ 置换中 masked correlation。
 - normalize 模式无 NaN 减法污染：空 cell 落盘 data=0/pma=0（:508-510），缺失列的有限垃圾值被目标列 pma 掩码与合法性检查双重挡住。
 
 ### c14_log_missing（log 重参照 quirk × universe 路径 × 缺失）
 
 - 新数据文件 `synth6d.txt`：T=6，240 spots = 100 个 dup 对（200 行）+ 40 个单 spot 基因；**值全部为正** uniform(0.5, 4.0)（3 位小数后仍 >0，规避 loader 规则 `btakelog && value<=0 → missing` 的意外触发，:513-521）；SPOT 列唯一（loader 对重复 spot 名抛异常，:437-447）。
-- dup 对分两组钉住两条传播链（quirk 见 §1.7③，重参照掩码 STEM_DataSet.java:1221-1275）：
-  - **组 1（±Inf 路线，对 0-49）**：spot A（行 2i）在 0 基时间索引 2 置**空格** → log 模式 log(0)=−Inf 进 spot 序列；置换把索引 2 移到基线时，A 在场列贡献 `finite−(−Inf)=+Inf` → vals=[+Inf, finite] → getmedian 偶数取平均 = **+Inf** → 下游 `sqrt(Inf−Inf)=NaN` → dcorr=NaN 被跳过（:1349 注释 "if dcorr na then numbest not advanced"）→ ntotalassignments 分母变小。
-  - **组 2（字面 NaN 路线，对 50-99）**：spot A 在 0 基时间索引 2 放**负值**（如 −0.7）→ loader 记 pma=0 但 data 保留负值 → log(负)=**NaN** 进 spot 序列 → vals 得真 NaN → 中位数 NaN。
+- dup 对分两组钉住两条传播链（quirk 见 §1.7③，重参照掩码 STEM_DataSet.java:1210-1262）。**缺陷必须放在 dup 组第二行（行 2i+1，secondary），不能放主行**：`genespottimedata[·][0]` 按引用存主行、随后被合并中位数**原地覆写**（DataSetCore.java:675-679 vs :717-723，§1.2 别名的推论），主行的 −Inf/NaN 会被抹掉；secondary 保留合并前 log-ratio，缺陷才能进重参照 vals。
+  - **组 1（±Inf 路线，对 0-49）**：secondary 在 0 基时间索引 2 置**空格** → log 模式 log(0)=−Inf 进 spot 序列；置换把索引 2 移到基线时，secondary 在场列贡献 `finite−(−Inf)=+Inf` → vals=[+Inf, finite] → getmedian 偶数取平均 = **+Inf** → 下游 `sqrt(Inf−Inf)=NaN` → dcorr=NaN 被跳过（:1353 注释 "if dcorr na then numbest not advanced"）→ ntotalassignments 分母变小。
+  - **组 2（字面 NaN 路线，对 50-99）**：secondary 在 0 基时间索引 2 放**负值**（如 −0.7）→ loader 记 pma=0 但 data 保留负值（**DataSetCore.java:530-533** 的 `btakelog && value<=0` 规则）→ log(负)=**NaN** 进 spot 序列 → vals 得真 NaN → 中位数 NaN。
 - 配置：`Log normalize data`、`Maximum_Number_of_Missing_Values=1`、`Permutation_Test_Should_Permute_Time_Point_0=true`、`Number_of_Permutations_per_Gene=50`、`Minimum_Absolute_Log_Ratio_Expression=0.5`、`Change_should_be_based_on=Maximum-Minimum`（显式写，不依赖默认）。**universe=6!=720**（permute_t0=true 走 `generatepermutations`，:1093/:1468；120=(6−1)! 属于 permute_t0=false 的 `generatepermutationsExcept0`，基线恒 t0、缺失列永远当不了基线、quirk 永不触发——第 5 轮评审修正），50 < 720 → subsample_universe 路径。
 - dup 合并语义（已验证）：merged pma = Math.max（:716-723）→ 组 1/组 2 的 merged 行无缺失、filterMissing 放行；置换合法性检查读 merged pma（:1153）→ 基线=缺失列的置换**合法**、重参照块必然运行。
 
 ### 生成与断言
 
-- 生成方式：`gen_fixtures.py --fixtures c13_synth10_missing,c14_log_missing` 只生成这两个配置 + 两个数据文件（**绝不重写** c01-c12 配置、synth6/synth10、vectors）；随后对每个新配置**单独**调用 `java -jar stem.jar -b <单配置文件> <outdir>`（Java 原生支持单文件输入，:1274-1282）。**不做整目录重跑**——c09/c10/c11 的历史 `STEMpy/` 前缀指向已不存在的目录，整目录批处理会 FileNotFoundException 并被 runBatchDir 捕获后静默跳过（:1300-1311）。c01-c12 参照表以"根本不碰"保证不变。
+- 生成方式：`gen_fixtures.py --fixtures c13_synth10_missing,c14_log_missing` 只生成这两个配置 + 两个数据文件（**绝不重写** c01-c12 配置、synth6/synth10、vectors；且拒绝以冻结配置名调用）；随后把新配置复制进 scratch 目录对**该目录**跑 `java -jar stem.jar -b .batch_scratch <outdir>`（目录模式，裸文件名 → 输出命名正确，:1268-1282）。**禁止两种做法**：① 整目录重跑——c09/c10/c11 的历史 `STEMpy/` 前缀指向已不存在的目录，会被 runBatchDir 捕获 FileNotFoundException 后静默跳过（:1300-1311）；② 把单个配置**文件**直接传给 `-b`——`szcurrentDefaultFile` 会带上完整输入路径（:1289/:1294），输出名 = 完整路径去掉扩展名（:2947/:2989），FileWriter 静默失败（执行期实证，post-review 回填）。c01-c12 参照表以"根本不碰"保证不变。
 - Data_File 前缀约定：新配置写当前目录名 `pySTEMtc/tests/golden/data/...`；冻结 c09/c10/c11 的 `STEMpy/` 前缀保留为证据（HANDOFF D8）。
 - 测试侧分支到达断言（`tests/test_golden_branches.py`，评审要求：不能只靠"测试通过"）：c13 断言 `permutation_mode=="on_the_fly"` 且 ≥10 个幸存基因的基因级序列含 ≥1 个非 t0 缺失；c14 断言 `permutation_mode=="subsample_universe"` 且组 1、组 2 各 ≥10 个幸存 dup 基因（spot 级在索引 2 缺失）。
 
@@ -238,7 +239,7 @@ cluster_profiles(sig, models, thr, percentile_thr) -> clusters   # 贪心球：�
 ## 3. 工件与再生成
 
 - `tests/golden/java_configs/`（14 组配置：c01–c12 + c13_synth10_missing + c14_log_missing，设计钉死见 §1.9）、`java_reference/`（28 张表 + `_batch_stdout.log`）、`java_rng/vectors.txt`、`java_statutil/vectors.txt`、`data/synth6.txt|synth10.txt|synth10m.txt|synth6d.txt`。
-- 再生成：全量 `python pySTEMtc/tools/gen_fixtures.py`（需 JRE 8：`C:\Program Files\Java\jre1.8.0_451\bin`；注意全量会按当前目录名重写配置 Data_File 前缀）；**增量** `python pySTEMtc/tools/gen_fixtures.py --fixtures c13_synth10_missing,c14_log_missing` 后对每个新配置**单独** `java -jar stem.jar -b <配置文件> <outdir>`——**禁止整目录重跑**（c09/c10/c11 历史前缀会 FileNotFoundException 被静默跳过，§1.9）。
+- 再生成：全量 `python pySTEMtc/tools/gen_fixtures.py`（需 JRE 8：`C:\Program Files\Java\jre1.8.0_451\bin`；注意全量会按当前目录名重写配置 Data_File 前缀）；**增量** `python pySTEMtc/tools/gen_fixtures.py --fixtures <新配置名>`（拒绝冻结配置名；scratch 目录模式批跑，§1.9）——**禁止整目录重跑**（c09/c10/c11 历史前缀会 FileNotFoundException 被静默跳过）、**禁止把单个配置文件直接传给 `-b`**（输出名嵌入输入路径，静默失败，§1.9）。
 - fixtures 提交入库，CI 不依赖 Java。
 
 ## 4. 里程碑（不变）

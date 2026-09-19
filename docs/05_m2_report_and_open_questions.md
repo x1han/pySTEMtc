@@ -149,5 +149,5 @@ M2 将 STEM v1.3.14 的核心算法链完整移植并通过全部金标验收：
 
 - c13：T=10、新文件 synth10m.txt（300 spots）、确定性缺失（行 i%3==2 在 0 基索引 (i%9)+1 置空、t0 永不缺）、`max_missing=1`；目标 = on-the-fly 合法性检查（:1223）+ masked correlation。
 - c14：T=6、synth6d.txt（100 dup 对 + 40 单 spot、全正值）、组 1 空格（log(0)=−Inf → vals 得 +Inf → 中位数 +Inf → sqrt(NaN) → dcorr=NaN 跳过）、组 2 负值（loader 记缺失保留负值 → log(负)=NaN 进中位数）、`permute_t0=true`（universe=720 而非 120——120 蕴含 permute_t0=false，会使 quirk 永不触发）、`max_missing=1`。
-- 生成：`gen_fixtures.py --fixtures ...` 增量 + **单配置** `stem.jar -b <file> <outdir>`（禁止整目录重跑：c09/c10/c11 历史前缀会 FileNotFoundException 被静默跳过）；c01-c12 参照表根本不碰。
+- 生成：`gen_fixtures.py --fixtures ...` 增量 + **scratch 目录模式**批跑（执行期实证：单文件 `-b` 会把完整输入路径嵌入输出名而静默失败，ST.java:2947/:2989；整目录重跑则因 c09/c10/c11 历史前缀 FileNotFoundException 被静默跳过）；c01-c12 参照表根本不碰。
 - 断言：permutation_mode、幸存基因中带缺失者的数量下限（见 spec §1.9）。

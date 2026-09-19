@@ -1,6 +1,7 @@
 """M2 golden verification against the Java batch reference tables.
 
-For EACH of the 12 configs in ``tests/golden/java_configs`` the engine is run
+For EACH of the 14 configs in ``tests/golden/java_configs`` (c01-c12 plus
+the round-5 branch fixtures c13/c14) the engine is run
 through :meth:`pystemtc.engine.STEM.fit` on the config's Data_File (+ repeats)
 and compared against ``java_reference/<case>_profiletable.txt``:
 
@@ -88,10 +89,15 @@ def _run_case(case: str):
     return result
 
 
+def _read_golden_text(path: Path) -> str:
+    # Java's batch writer uses the platform default charset of the oracle
+    # box (GBK here); c14's -Inf cells are GBK 0xA1DE ("∞"). ASCII tables
+    # decode identically under either, so GBK is the deterministic choice.
+    return path.read_bytes().decode("gbk")
+
+
 def _read_profile_table(case: str):
-    lines = (REFERENCE / f"{case}_profiletable.txt").read_text(
-        encoding="utf-8"
-    ).splitlines()
+    lines = _read_golden_text(REFERENCE / f"{case}_profiletable.txt").splitlines()
     header = lines[0].split("\t")
     assert header == [
         "Profile ID",
@@ -105,9 +111,7 @@ def _read_profile_table(case: str):
 
 
 def _read_gene_table(case: str):
-    lines = (REFERENCE / f"{case}_genetable.txt").read_text(
-        encoding="utf-8"
-    ).splitlines()
+    lines = _read_golden_text(REFERENCE / f"{case}_genetable.txt").splitlines()
     header = lines[0].split("\t")
     assert header[2] == "Profile"
     return header, [line.split("\t") for line in lines[1:] if line != ""]
@@ -138,7 +142,7 @@ def test_golden_profiletable(case):
     for i, (row, rec) in enumerate(zip(rows, result.profiles)):
         # --- Level A: exact ---
         got = [
-            str(i),
+            str(rec.id),
             ",".join(java_double_to_string(v) for v in rec.model),
             str(rec.cluster),
             java_double_to_string(rec.n_assigned),
