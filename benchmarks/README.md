@@ -34,7 +34,7 @@ summary Markdown into `results/<UTC timestamp>/`.
 
 | group | ids | definition |
 |---|---|---|
-| core (default) | B1-B9 | round-6 named grid plus round-7 path-isolator: B1=1000x5T, B2=5000x5T, B3=10000x5T, B4=30000x5T, B5=10000x8T, **B9=10000x9T** (on_the_fly + enumerate, separates T=9 crossing from B6 sampling), B6=10000x10T; no repeat files |
+| core (default) | B1-B9 | round-6 named grid plus round-7 transition-diagnostic point: B1=1000x5T, B2=5000x5T, B3=10000x5T, B4=30000x5T, B5=10000x8T, **B9=10000x9T** (T=9 falls in the on_the_fly + enumerate intersection, the boundary where B5→B6 path-switching is observable but the steps co-vary too much for single-factor decomposition), B6=10000x10T; no repeat files |
 | `--sweep` | S10/S50/S100/S500/S1000 | 10000x8T with `n_permutations` in {10, 50, 100, 500, 1000} (50 model profiles) |
 | `--reps` | B7, B8 | 10000x5T and 10000x10T, each with 2 repeat files (`different_periods`) |
 

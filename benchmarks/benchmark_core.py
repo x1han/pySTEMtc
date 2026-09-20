@@ -62,8 +62,9 @@ RESULTS = _HERE / "results"
 SEED_DEFAULT = 20260919
 
 # Candidate-profile cap matches engine.STEM(candidate_cap=...) default.
-# Mirrors the worker construction at line ~212; rounds-7 expert attribution
-# of B6's 873 MiB peak to the sample-1M branch is anchored here.
+# Mirrors the worker construction at line ~212.  B6's 873 MiB peak is a
+# measured observation under the sample-1M code path; round-7.1 explicitly
+# ruled out a single-factor causal attribution.
 # NOTE (round-7.1 P3): these constants are derived from the engine call
 # site, NOT read back from `result.metadata`.  They match because the
 # worker hard-codes `candidate_cap=1_000_000` and `max_unit_change=2`.
@@ -93,7 +94,7 @@ CORE: list[BenchSpec] = [
     BenchSpec("B3", 10_000, 5),
     BenchSpec("B4", 30_000, 5),
     BenchSpec("B5", 10_000, 8),
-    BenchSpec("B9", 10_000, 9),  # round-7 path-isolator: T=9 -> on_the_fly + enumerate (5^8=390,625<1M)
+    BenchSpec("B9", 10_000, 9),  # round-7 transition-diagnostic point: T=9 -> on_the_fly + enumerate (5^8=390,625<1M)
     BenchSpec("B6", 10_000, 10),
 ]
 SWEEP: list[BenchSpec] = [
