@@ -153,4 +153,4 @@ tests/test_units_m2.py::test_double_to_sz PASSED                         [ 98%]
 tests/test_units_m2.py::test_config_defaults_file_m2_keys PASSED         [ 99%]
 tests/test_units_m2.py::test_engine_validates_profile_params PASSED      [100%]
 
-======================= 146 passed in 96.52s (0:01:36) ========================
+======================= 146 passed in 96.58s (0:01:36) ========================
