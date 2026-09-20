@@ -1,27 +1,24 @@
 === git log (HEAD 5) ===
+b4d84d8 docs(handoff): D16 resource-budget user-facing note + D14 finalization (round-7.1)
+431f281 docs(round-7.1): B9 transition diagnostic + resource-budget wording + refresh artifact (P1-2/P1-3/P2)
+659d30f fix(spec): schema v2 wording — drop 'orthogonal', 8-combination truth table (round-7.1 P1-1)
+045236b docs: refresh round-7 verification artifacts (git state, pytest log, full diff)
 4cbb4a0 docs(round-7): fix §3.4 B6 causal claim, 139→146 typo, nike/n_permutations, residual fragment
-4e3d0e6 feat(benchmarks): emit candidate_path + candidate_universe columns (round-7 P2)
-894850f docs: round-7 verification artifacts (pytest log, git state, full diff)
-2e67709 docs(spec,report): orthogonality contract, B6 attribution fix, resource-budget note (round-7)
-ee48c0e feat(benchmarks): B9 path-isolator (10k x 9T); full 9-bench core run
 
 === git status ===
+ D benchmarks/results/20260920T033542Z/20260920T033542Z_core.csv
+ D benchmarks/results/20260920T033542Z/20260920T033542Z_core.md
  M verification/git_state.txt
+?? verification/pytest_full_round71.log
 (empty = clean)
 
-=== diffstat 0d87878..HEAD ===
- benchmarks/README.md                               |   2 +-
- benchmarks/benchmark_core.py                       |  38 +-
- .../20260919T181249Z/20260919T181249Z_core.csv     |  25 -
- .../20260919T181249Z/20260919T181249Z_core.md      |  30 -
- .../20260920T033542Z/20260920T033542Z_core.csv     |  37 +
- .../20260920T033542Z/20260920T033542Z_core.md      |  36 +
- docs/03_v1_implementation_spec.md                  |  27 +-
- docs/08_m4_round6_report.md                        | 113 +--
- src/pystemtc/result.py                             |  68 +-
- tests/test_result_schema.py                        |  34 +
- verification/git_state.txt                         |  30 +-
- verification/pytest_full_20260920_025500.log       | 149 +++-
- verification/pytest_full_round7.log                | 156 ++++
- verification/round7_full.diff                      | 865 +++++++++++++++++++++
- 14 files changed, 1448 insertions(+), 162 deletions(-)
+=== diffstat 045236b..HEAD ===
+ HANDOFF.md                                         |  7 ++-
+ benchmarks/benchmark_core.py                       |  8 +++
+ .../20260920T044548Z/20260920T044548Z_core.csv     | 37 ++++++++++++
+ .../20260920T044548Z/20260920T044548Z_core.md      | 36 ++++++++++++
+ docs/03_v1_implementation_spec.md                  | 12 ++--
+ docs/08_m4_round6_report.md                        | 66 +++++++++++-----------
+ src/pystemtc/result.py                             | 21 +++++--
+ tests/test_result_schema.py                        | 33 ++++++-----
+ 8 files changed, 163 insertions(+), 57 deletions(-)
