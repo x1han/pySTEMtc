@@ -459,11 +459,13 @@ engine.fit(...) ─► result.input["probe_header"], result.input["gene_header"]
 
 | 指标 | PySTEMTC | Java STEM v1.3.14 |
 |---|---|---|
-| wall | 2.13 s | 待 harness 测（headless `-b` 模式实测 16.x s，待验证） |
+| wall (median) | 3.57 s (formal=3) | 2.50 s (formal=3) |
+| peak RSS | 87.4 MiB | 13.7 MiB (child peak via OpenProcess+Psapi) |
 | input spots | 1999 | 1999 |
 | retained genes | 1631/1999 (81.6%) | 1631/1999 (81.6%) |
 | model profiles | 50 | 50 |
 | permutation_mode | `subsample_universe` (5⁶=15,625 < 1M) | 同 (enumerable set) |
+| exit_code | 0 | 0 |
 | **Compatibility A** | 1631/1631 exact, 0 mismatch | — |
 
 **Java headless 调用契约**（user 必须遵守 + harness 必须执行）：
