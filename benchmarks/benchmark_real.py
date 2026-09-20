@@ -66,6 +66,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import platform as _platform
@@ -226,9 +227,19 @@ def _profile_dataset(manifest: dict, dataset_id: str) -> dict:
 #     - reads JSON payload from worker stdout (core_wall + stage timing + assignments)
 
 def _python_worker_main(manifest: dict, dataset_id: str) -> dict:
-    """In-worker payload builder. Called inside the fresh subprocess."""
+    """In-worker payload builder. Called inside the fresh subprocess.
+
+    Round-8 change: the worker now also writes the genetable and
+    profiletable via :meth:`STEMResult.write_java_tables` so the
+    benchmark can byte-compare against the Java golden at C1 / C2
+    (round-7.5 PROVISIONAL flag is now lifted).  The writer call is
+    inside the timed core path (post-``engine.fit``); writers with
+    ``encoding='gbk', newline='\\r\\n'`` match Java's Windows-default
+    byte stream and exercise the C2 byte-exact contract.
+    """
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from src.pystemtc.engine import STEM
+    from src.pystemtc.result import STEMResult
 
     cfg = manifest["config"]
     replicates = manifest.get("replicates") or []
@@ -254,6 +265,23 @@ def _python_worker_main(manifest: dict, dataset_id: str) -> dict:
         change_rule=cfg.get("change_rule", "max_minus_min"),
     )
     res = engine.fit(manifest["main"], replicates=replicates if replicates else None)
+    # Round-8: write Java-shaped tables for C1/C2 byte comparison.  Use
+    # GBK + CRLF to match Java's Windows-default byte stream; this is
+    # what makes C2 byte-exact possible against the oracle.  File
+    # names are prefixed with the dataset_id to match the convention
+    # used for the Java oracle copy (line 396: ``{dataset_id}_genetable.txt``).
+    worker_out_dir = Path(os.environ.get("PYSTEMTC_BENCH_OUTDIR", ".")) / "py"
+    worker_out_dir.mkdir(parents=True, exist_ok=True)
+    g_path = worker_out_dir / f"{dataset_id}_genetable.txt"
+    p_path = worker_out_dir / f"{dataset_id}_profiletable.txt"
+    # write into a tmpdir first then move so the writer's hardcoded
+    # ``genetable.txt`` / ``profiletable.txt`` filenames don't pollute
+    # the canonical path.
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        res.write_java_tables(td, encoding="gbk", newline="\r\n")
+        shutil.copy2(Path(td) / "genetable.txt", g_path)
+        shutil.copy2(Path(td) / "profiletable.txt", p_path)
     core_wall = time.perf_counter() - t0
     payload = {
         "dataset_id": dataset_id,
@@ -275,11 +303,15 @@ def _python_worker_main(manifest: dict, dataset_id: str) -> dict:
     return payload
 
 
-def _spawn_python_worker(manifest_path: Path, dataset_id: str) -> tuple[dict, float]:
+def _spawn_python_worker(manifest_path: Path, dataset_id: str,
+                         out_dir: Path) -> tuple[dict, float]:
     """Spawn a fresh Python subprocess; time ``end_to_end_wall`` around the
     call; return (worker_payload, end_to_end_wall_s).
 
-    Mirrors benchmark_core.py's _spawn_worker pattern (line 275).
+    Round-8: ``PYSTEMTC_BENCH_OUTDIR`` is exported so the worker can
+    drop its genetable / profiletable next to the parent ``out_dir``
+    for byte comparison.  Mirrors benchmark_core.py's _spawn_worker
+    pattern (line 275).
     """
     cmd = [
         sys.executable,
@@ -288,8 +320,10 @@ def _spawn_python_worker(manifest_path: Path, dataset_id: str) -> tuple[dict, fl
         "--manifest", str(manifest_path),
         "--language", "python",
     ]
+    env = dict(os.environ)
+    env["PYSTEMTC_BENCH_OUTDIR"] = str(out_dir)
     t0 = time.perf_counter()
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
     end_to_end_wall = time.perf_counter() - t0
     if proc.returncode != 0:
         raise RuntimeError(
@@ -660,6 +694,45 @@ def _compare_consistency(py: dict, java: dict) -> dict:
     }
 
 
+def _compare_byte_tables(
+    py_path: Path, java_path: Path,
+) -> dict:
+    """Round-8: byte-level comparison of two genetable / profiletable files.
+
+    Returns:
+        c1_decoded_exact: True iff bytes decoded as UTF-8 (with GBK
+            fallback for c14-style rows) are equal line-by-line after
+            CRLF -> LF normalization.
+        c2_byte_exact: True iff raw bytes are identical.
+        py_size / java_size: file sizes for diagnostic.
+    """
+    out = {
+        "py_path": str(py_path),
+        "java_path": str(java_path),
+        "py_exists": py_path.exists(),
+        "java_exists": java_path.exists(),
+        "c1_decoded_exact": False,
+        "c2_byte_exact": False,
+        "py_size": py_path.stat().st_size if py_path.exists() else 0,
+        "java_size": java_path.stat().st_size if java_path.exists() else 0,
+    }
+    if not (out["py_exists"] and out["java_exists"]):
+        return out
+    py_bytes = py_path.read_bytes()
+    java_bytes = java_path.read_bytes()
+    out["c2_byte_exact"] = py_bytes == java_bytes
+
+    def _decode(raw: bytes) -> list[str]:
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("gbk")
+        return [ln.rstrip("\r") for ln in text.splitlines()]
+
+    out["c1_decoded_exact"] = _decode(py_bytes) == _decode(java_bytes)
+    return out
+
+
 # --------------------------------------------------------------------------
 # CSV / MD writers
 # --------------------------------------------------------------------------
@@ -826,7 +899,8 @@ def _csv_row(dataset_id: str, run_idx: int, kind: str, lang: str,
 def _write_summary_md(out_dir: Path, dataset_id: str, profile: dict,
                       py_payloads: list[dict], java_payloads: list[dict],
                       consistency: dict, determinism: dict,
-                      env: dict, args: argparse.Namespace) -> None:
+                      byte_compare: dict, env: dict,
+                      args: argparse.Namespace) -> None:
     """Write the main table. Round-7.5:
 
     - **end_to_end_wall** is the cross-language-comparable metric
@@ -937,12 +1011,43 @@ def _write_summary_md(out_dir: Path, dataset_id: str, profile: dict,
             lines.append(f"  - run{ex[0]} `{ex[1]}`: ref={ex[2]}  this={ex[3]}")
     lines += [
         "",
-        "## Compatibility C1",
+        "## Compatibility C1 / C2 (round-8; writer integrated)",
         "",
-        "> **NOT YET ASSESSED** -- the writer (``STEMResult.write_java_tables``) "
-        "is implemented in a future round; before then, this benchmark cannot "
-        "produce a Python genetable / profiletable to byte-compare against the "
-        "Java oracle. See docs/03 §1.10 (round-7.3 writer contract sweep).",
+    ]
+    if byte_compare:
+        # Render a C1/C2 verdict per artifact; either can fail without
+        # blocking the other since C1 normalizes CRLF+GBK and C2 is raw
+        # byte-equality (which would only fail on encoding path, see
+        # c14 discussion).
+        rows = []
+        for kind, info in byte_compare.items():
+            rows.append(
+                f"| {kind} | {'PASS' if info['c1_decoded_exact'] else 'FAIL'} "
+                f"| {'PASS' if info['c2_byte_exact'] else 'FAIL'} "
+                f"| {info['py_size']:,} | {info['java_size']:,} |"
+            )
+        lines += [
+            "| Artifact | C1 (decoded exact) | C2 (byte exact) | py bytes | java bytes |",
+            "|---|---|---|---|---|",
+            *rows,
+        ]
+        c1_all = all(b["c1_decoded_exact"] for b in byte_compare.values())
+        c2_all = all(b["c2_byte_exact"] for b in byte_compare.values())
+        if c1_all and c2_all:
+            lines += ["", "**C1 / C2 verdict: PASS (both decoded and byte-exact across all artifacts)**"]
+        elif c1_all and not c2_all:
+            lines += [
+                "",
+                "**C1 PASS / C2 partial**: decoded text matches Java oracle on every "
+                "artifact; the byte-exact comparison fails where the file encoding "
+                "path differs (the round-8 c14 case writes GBK `\\xA1\\xDE` for "
+                "`-∞`, see ``tests/test_writer_golden_c1.py::_read_java_ref_decoded``).",
+            ]
+        else:
+            lines += ["", "**C1 / C2 verdict: FAIL** -- see ``runs.csv`` per-row diagnostic."]
+    else:
+        lines += ["> Python worker did not produce genetable / profiletable; C1 / C2 not assessed."]
+    lines += [
         "",
         "## Main table -- process-level wall (same timing protocol; workload not yet equivalent)",
         "",
@@ -1042,7 +1147,7 @@ def main() -> None:
         kind = "warmup" if run_idx < args.warmup else "formal"
         # --- Python side (fresh subprocess per run; end_to_end_wall in
         # parent; core_wall + stage timings from worker JSON) ---
-        py, py_e2e = _spawn_python_worker(args.manifest, dataset_id)
+        py, py_e2e = _spawn_python_worker(args.manifest, dataset_id, out_dir)
         py["end_to_end_wall_s"] = py_e2e
         if kind == "formal":
             py_payloads.append(py)
@@ -1081,6 +1186,19 @@ def main() -> None:
                          "n_mismatches": 0, "first_mismatches": []}
     if py_payloads and java_payloads:
         consistency = _compare_consistency(py_payloads[0], java_payloads[0])
+
+    # Round-8: byte-level C1 + C2 comparison of the genetable /
+    # profiletable the Python worker now writes (encoding='gbk',
+    # newline='\\r\\n') against the Java golden oracle copied next to
+    # it by the parent.  ``py_out`` is the per-run py worker output
+    # directory; ``java_out_dir`` is where Java dropped its files.
+    py_out = out_dir / "py"
+    byte_compare: dict = {}
+    if py_out.exists():
+        for kind in ("genetable", "profiletable"):
+            py_p = py_out / f"{dataset_id}_{kind}.txt"
+            java_p = out_dir / f"{dataset_id}_{kind}_java.txt"
+            byte_compare[kind] = _compare_byte_tables(py_p, java_p)
     # Round-7.6 P2: determinism sanity check across formal runs. Both
     # languages are deterministic on fixed input/seed; if any run
     # produces a different profile_ids set, that's a real bug.
@@ -1149,7 +1267,7 @@ def main() -> None:
     env["git_state"] = git_state
     env["git_diff_sha256"] = git_diff_sha
     _write_summary_md(out_dir, dataset_id, profile, py_payloads, java_payloads,
-                      consistency, determinism, env, args)
+                      consistency, determinism, byte_compare, env, args)
 
     print(f"profile: {profile_csv}")
     print(f"runs:    {runs_csv}")
@@ -1159,7 +1277,9 @@ def main() -> None:
           f" mismatches={consistency['n_mismatches']})")
     print(f"determinism: py={determinism['py_consistent']} "
           f"java={determinism['java_consistent']}")
-    print(f"C1 exact: NOT YET ASSESSED (writer not implemented)", flush=True)
+    print(f"C1 exact: {'PASS' if all(b.get('c1_decoded_exact') for b in byte_compare.values()) else 'PARTIAL/FAIL'}",
+          f"C2 byte: {'PASS' if all(b.get('c2_byte_exact') for b in byte_compare.values()) else 'PARTIAL/FAIL'}",
+          flush=True)
 
 
 if __name__ == "__main__":
