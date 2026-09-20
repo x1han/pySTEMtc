@@ -117,9 +117,13 @@ def test_gene_assignments_shape_and_c14_negative_infinity():
 @pytest.mark.parametrize(
     ("value", "present", "expected_state", "expected_value"),
     [
-        # 10-cell sweep — round-7 orthogonality contract (spec 03 §1.10):
-        # non-finite states are INDEPENDENT of present; finite states split on
-        # present.  Never collapse value_states into a missness-only field.
+        # 8 semantic combinations (4 value categories x 2 present) + 2 extra
+        # finite representative values for finite+True (the table contains
+        # two finite+True rows because finite+True is a single semantic
+        # combination, not two).  See spec 03 §1.10 round-7.1 contract:
+        # non-finite classification independent of present; finite payload
+        # then split by present.  Never collapse value_states into a
+        # missness-only field.
         (math.nan, True, "nan", None),
         (math.nan, False, "nan", None),
         (math.inf, True, "positive_infinity", None),
@@ -127,21 +131,24 @@ def test_gene_assignments_shape_and_c14_negative_infinity():
         (-math.inf, True, "negative_infinity", None),
         (-math.inf, False, "negative_infinity", None),
         (0.0, True, "finite", 0.0),
-        (-0.5, True, "finite", -0.5),
+        (-0.5, True, "finite", -0.5),  # extra finite+True representative
         (0.948, False, "missing", 0.948),  # c13 phantom-fill payload
-        (-math.inf, False, "negative_infinity", None),  # c14 present=False, -Inf payload
+        (-math.inf, False, "negative_infinity", None),  # c14 present=False, -Inf
     ],
 )
-def test_encode_value_orthogonality_grid(
+def test_encode_value_truth_table_8_semantic_combinations(
     value, present, expected_state, expected_value
 ):
-    """Round-7 contract: value_states ⊥ present for non-finite payloads.
+    """Round-7.1 contract: 8 semantic (value, present) combinations.
 
-    The 10 (value, present) pairs pin the truth table.  Critically:
-    `(-inf, False)` reports `"negative_infinity"` (NOT `"missing"`), and
-    `(+inf, True)` reports `"positive_infinity"` (NOT `"finite"`) — both
-    cases would be wrong under the pre-round-7 direction-invariance
-    formulation `present=True ⇒ state=="finite"`.
+    The 10 parametrized cases are 8 distinct semantic combinations
+    (4 payload categories NaN/+Inf/-Inf/finite × 2 present bits) plus
+    2 extra representative finite values (0.0 and -0.5) — those two are
+    the same semantic case (finite+True), just different sample doubles.
+    Critically: `(-inf, False)` reports `"negative_infinity"` (NOT
+    `"missing"`), and `(+inf, True)` reports `"positive_infinity"`
+    (NOT `"finite"`) — both cases would be wrong under the pre-round-7
+    direction-invariance formulation `present=True ⇒ state=="finite"`.
     """
     state, out = _encode_value(value, present)
     assert state == expected_state

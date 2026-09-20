@@ -44,20 +44,21 @@ CONFIG_ALGORITHM_KEYS: tuple[str, ...] = (
 
 
 def _encode_value(value: float, present: bool) -> tuple[str, float | None]:
-    """Classify one stored double for schema v2 (spec 03 §1.10).
+    """Classify one stored double for schema v2 (spec 03 §1.10, round-7.1).
 
-    The two returned dimensions are ORTHOGONAL — neither implies the other:
+    The two information dimensions are kept together and MUST NOT replace
+    one another; their priority/dependency is pinned by the table below:
 
     - ``present`` is the Java pma mask and answers "did Java mark this cell
       as present?".  It is the unique authority for present-ness and is
       reported unchanged in the schema (``GeneAssignment.present``).
     - ``value_states`` answers "what is the CATEGORY of the stored double?":
       ``"nan" | "positive_infinity" | "negative_infinity" | "missing"
-      | "finite"``.  This dimension depends ONLY on the stored double plus,
-      for the finite branch, ``present``.  Non-finite payloads report their
-      non-finite state regardless of ``present``.
+      | "finite"``.
 
-    Therefore the correct contract (round-7 expert ruling, 2026-09-20) is:
+    Classification priority (round-7.1 expert ruling, 2026-09-20):
+      non-finite classification is independent of ``present``;
+      finite payload's state is then split by ``present``.
 
     =====  ============  ================================
     value  present       state               values
@@ -68,6 +69,14 @@ def _encode_value(value: float, present: bool) -> tuple[str, float | None]:
     finite True          "finite"            original value
     finite False         "missing"           fill payload retained
     =====  ============  ================================
+
+    This is the 8 distinct semantic combinations (4 value categories
+    × 2 present), NOT a "10-cell orthogonal truth table" — the latter
+    phrase is wrong because ``(-inf, False)`` is the same semantic case
+    as the other ``-inf`` rows and the test parametrize list uses 2
+    finite+True values purely as additional representative samples.  See
+    :func:`tests.test_result_schema.test_encode_value_truth_table_8_semantic_combinations`
+    for the 8-combination sweep plus 2 finite representative cases.
 
     Consequences: ``state == "finite"`` IFF ``value`` finite AND
     ``present == True``; ``state == "missing"`` IFF ``value`` finite AND
