@@ -1,22 +1,39 @@
 === git log (HEAD 5) ===
-354f40f docs(round-7.2): text cleanup — 'transition diagnostic' replaces 'path isolator', review-zip refresh
-aee762a fix(round-7.2): writer pre-blocker P1 closure — header metadata + schema 8+2 wording finalization
-66399c2 docs: refresh round-7.1 verification artifacts (post-review fixes included)
-8100417 fix(docs): purge remaining '正交合同/10 格真值表/10-cell 正交矩阵' wording in substantive sections (round-7.1 post-review P1)
-60a3e29 docs: refresh round-7.1 verification artifacts (git state, pytest log, full diff)
+8d160a7 FINAL-A: writer defaults, CLI, M5 warning, R1 anchor + Java byte-exact, 281 green
+c753afa docs(round-8): Round-8 final report (writer + W1/W2/W3 + R1 evidence)
+9871d05 fix(round-8-final): restore prefix API + pre-run clean gate + fix numpy repr
+4652712 bench(writer): lift PROVISIONAL banner -- writer now integrated
+0d6edd2 bench(writer): integrate write_java_tables into Python worker + C1/C2 verdict
 
 === git status ===
- M verification/git_state.txt
-(empty = clean)
+?? FINAL_ALGORITHM_ACCEPTANCE.md
+?? README.md
+?? docs/08_m4_round8_final_report.md
+(no staged / unstaged changes from FINAL-A; one untracked docs/ file from prior round)
 
-=== diffstat 66399c2..HEAD ===
- benchmarks/README.md                   |  2 +-
- benchmarks/benchmark_core.py           |  7 ++--
- docs/03_v1_implementation_spec.md      | 66 +++++++++++++++++++++++++++++++++-
- docs/08_m4_round6_report.md            |  4 +--
- src/pystemtc/dataio.py                 | 10 ++++++
- src/pystemtc/dataset.py                | 14 ++++++++
- src/pystemtc/engine.py                 |  5 +++
- tests/golden/headers/custom_header.txt |  7 ++++
- tests/test_result_schema.py            | 45 ++++++++++++++++++++++-
- 9 files changed, 152 insertions(+), 8 deletions(-)
+=== diffstat 8d160a7~1..8d160a7 (FINAL-A) ===
+ benchmarks/benchmark_real.py                       |   28 +-
+ .../R1_brain_trajectory_genetable.txt              | 1636 ++++++++++++++++
+ .../R1_brain_trajectory_profiletable.txt           |   51 +
+ final_acceptance/R1_brain_trajectory/cli_batch.log |   10 +
+ final_acceptance/R1_brain_trajectory/cli_run.log   |    8 +
+ .../java_R1_brain_trajectory_genetable.txt         | 1636 ++++++++++++++++
+ .../java_R1_brain_trajectory_profiletable.txt      |   51 +
+ final_acceptance/R1_brain_trajectory/main.txt      | 2000 ++++++++++++++++++++
+ .../R1_brain_trajectory/provenance.txt             |   26 +
+ .../R1_brain_trajectory/pytest_full.log            |  310 +++
+ .../R1_brain_trajectory/source_manifest.yaml       |   52 +
+ .../R1_brain_trajectory/testdata_result_summary.md |  100 +
+ pyproject.toml                                     |    3 +
+ src/pystemtc/cli.py                                |  321 ++++
+ src/pystemtc/engine.py                             |   18 +
+ src/pystemtc/result.py                             |   18 +-
+ tests/test_cli.py                                  |  272 +++
+ tests/test_m5_warning.py                           |  132 ++
+ tests/test_writer.py                               |   64 +-
+ verification/round75_R1v2_manifest.yaml            |   31 +-
+ 20 files changed, 6732 insertions(+), 35 deletions(-)
+
+=== commit 8d160a7 ===
+8d160a7127283fecbfb098fca03477c0cdc3c00b FINAL-A: writer defaults, CLI, M5 warning, R1 anchor + Java byte-exact, 281 green
+Han Xi Sun Sep 20 23:41:52 2026 +0800
