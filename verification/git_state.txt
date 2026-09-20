@@ -1,28 +1,22 @@
-=== git log (HEAD 7) ===
+=== git log (HEAD 5) ===
+354f40f docs(round-7.2): text cleanup — 'transition diagnostic' replaces 'path isolator', review-zip refresh
+aee762a fix(round-7.2): writer pre-blocker P1 closure — header metadata + schema 8+2 wording finalization
+66399c2 docs: refresh round-7.1 verification artifacts (post-review fixes included)
 8100417 fix(docs): purge remaining '正交合同/10 格真值表/10-cell 正交矩阵' wording in substantive sections (round-7.1 post-review P1)
 60a3e29 docs: refresh round-7.1 verification artifacts (git state, pytest log, full diff)
-b4d84d8 docs(handoff): D16 resource-budget user-facing note + D14 finalization (round-7.1)
-431f281 docs(round-7.1): B9 transition diagnostic + resource-budget wording + refresh artifact (P1-2/P1-3/P2)
-659d30f fix(spec): schema v2 wording — drop 'orthogonal', 8-combination truth table (round-7.1 P1-1)
-045236b docs: refresh round-7 verification artifacts (git state, pytest log, full diff)
-4cbb4a0 docs(round-7): fix §3.4 B6 causal claim, 139→146 typo, nike/n_permutations, residual fragment
 
 === git status ===
  M verification/git_state.txt
 (empty = clean)
 
-=== diffstat 045236b..HEAD ===
- HANDOFF.md                                         |   7 +-
- benchmarks/benchmark_core.py                       |   8 +
- .../20260920T033542Z/20260920T033542Z_core.csv     |  37 --
- .../20260920T033542Z/20260920T033542Z_core.md      |  36 --
- .../20260920T044548Z/20260920T044548Z_core.csv     |  37 ++
- .../20260920T044548Z/20260920T044548Z_core.md      |  36 ++
- docs/03_v1_implementation_spec.md                  |  14 +-
- docs/08_m4_round6_report.md                        |  82 ++---
- src/pystemtc/result.py                             |  21 +-
- tests/test_result_schema.py                        |  33 +-
- verification/git_state.txt                         |  37 +-
- verification/pytest_full_round71.log               | 156 +++++++++
- verification/round71_full.diff                     | 377 +++++++++++++++++++++
- 13 files changed, 722 insertions(+), 159 deletions(-)
+=== diffstat 66399c2..HEAD ===
+ benchmarks/README.md                   |  2 +-
+ benchmarks/benchmark_core.py           |  7 ++--
+ docs/03_v1_implementation_spec.md      | 66 +++++++++++++++++++++++++++++++++-
+ docs/08_m4_round6_report.md            |  4 +--
+ src/pystemtc/dataio.py                 | 10 ++++++
+ src/pystemtc/dataset.py                | 14 ++++++++
+ src/pystemtc/engine.py                 |  5 +++
+ tests/golden/headers/custom_header.txt |  7 ++++
+ tests/test_result_schema.py            | 45 ++++++++++++++++++++++-
+ 9 files changed, 152 insertions(+), 8 deletions(-)
