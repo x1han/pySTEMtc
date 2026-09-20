@@ -15,6 +15,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest"]
+# benchmark_real.py needs PyYAML for the YAML manifest. Kept out of the
+# core runtime dependency so PyPI installs don't pull it in for users who
+# only want the analysis engine.
+benchmark = ["PyYAML>=6,<7"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

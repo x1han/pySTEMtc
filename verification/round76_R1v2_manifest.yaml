@@ -1,0 +1,39 @@
+# R1 manifest -- Brain trajectory T=7 across mouse development
+# (round-7.4 dry-run; user-provided source: D:/stem/testdata/stem.testdata.tsv,
+#  preprocessed to drop gene_id and select Brain columns 8W..P21).
+#
+# Run:
+#   python benchmarks/benchmark_real.py --manifest D:/stem/benchmark_data/R1/manifest.yaml
+
+id: R1_brain_trajectory
+main: D:/stem/benchmark_data/R1/main.txt
+replicates: []
+
+config:
+  normalize: log
+  max_unit_change: 2
+  max_model_profiles: 50
+  max_correlation: 1.0
+  candidate_cap: 1000000
+  n_permutations: 50
+  permute_t0: true
+  correction: bonferroni
+  max_missing: 1
+  min_abs_expr: 0.5
+  repeat_mode: different_periods
+  spot_included: false
+  clustering_method: stem
+
+description:
+  organism: mus_musculus
+  assay: tissue_expression
+  source: user_provided_round_7_4
+  preprocessing: |
+    Derived from D:/stem/testdata/stem.testdata.tsv (1999 ENSG-Mus-musculus genes × 60 multi-stage tissue columns).
+    R1 v1: Brain trajectory T=7 in source order (8W first -- wrong, 8W is adult 8 weeks).
+    R1 v2 (round-7.5 P1-4): Brain trajectory T=7 in biological developmental order:
+      E10.5_Brain, E12.5_Brain, E14.5_Brain, E16.5_Brain,
+      P0_Brain, P21_Brain, 8W_Brain (adult).
+    Dropped gene_id; kept gene_name as the ID column (spot_included=false).
+  source_sha256: 9e6dba16d1dcfcb4ea39226066e7c3bc53c0175888122134e8357285cef54514
+  analysis_input_sha256: ef8e6ae3915c50bcef518d737b915e9e36d83bb2bb02c59cf643b27a105a45ac

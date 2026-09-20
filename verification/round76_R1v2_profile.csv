@@ -1,0 +1,8 @@
+dataset_id,input_rows,unique_gene_names,duplicate_gene_rows,T,reps,raw_missing_rate,zero_rate,nonpositive_rate,value_min,value_max,value_median,analysis_input_sha256,source_sha256,derivation_description,final_retained_genes
+R1_brain_trajectory,1999,1999,0,7,0,0.0,0.10641,0.10641,0.0,5641.1103,19.8249,ef8e6ae3915c50bcef518d737b915e9e36d83bb2bb02c59cf643b27a105a45ac,9e6dba16d1dcfcb4ea39226066e7c3bc53c0175888122134e8357285cef54514,"Derived from D:/stem/testdata/stem.testdata.tsv (1999 ENSG-Mus-musculus genes × 60 multi-stage tissue columns).
+R1 v1: Brain trajectory T=7 in source order (8W first -- wrong, 8W is adult 8 weeks).
+R1 v2 (round-7.5 P1-4): Brain trajectory T=7 in biological developmental order:
+  E10.5_Brain, E12.5_Brain, E14.5_Brain, E16.5_Brain,
+  P0_Brain, P21_Brain, 8W_Brain (adult).
+Dropped gene_id; kept gene_name as the ID column (spot_included=false).
+",

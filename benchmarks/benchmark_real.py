@@ -144,11 +144,14 @@ def _profile_dataset(manifest: dict, dataset_id: str) -> dict:
         time_cols = n_cols - 1
     else:
         time_cols = n_cols
-    # Use the FIRST data column as the gene identifier (independent of
-    # spot_included: when spot_included=True, the first column IS the gene
-    # name; when False, the only ID column is the gene name). The spec is
-    # captured by spot_included; the ID column is always body[i][0].
-    gene_names = [r[0] for r in body]
+    # Round-7.6 fix: gene column index depends on spot_included.
+    # spot_included=True:  body[i] = [SPOT, GENE, t1, t2, ...]   -> gene at index 1
+    # spot_included=False: body[i] = [GENE, t1, t2, ...]        -> gene at index 0
+    # (For R1 with spot_included=False, the index is 0 either way, but R2/R3
+    # with spot_included=True need this branch.)
+    spot_inc = manifest["config"].get("spot_included", True)
+    gene_col = 1 if spot_inc else 0
+    gene_names = [r[gene_col] for r in body]
     input_rows = len(body)
     unique_gene_names = len(set(gene_names))
     duplicate_gene_rows = input_rows - unique_gene_names
@@ -184,19 +187,27 @@ def _profile_dataset(manifest: dict, dataset_id: str) -> dict:
         "reps": len(manifest.get("replicates") or []),
         "raw_missing_rate": round(raw_missing / total_cells, 6) if total_cells else 0.0,
         "zero_rate": round(zeros / total_cells, 6) if total_cells else 0.0,
+        # Round-7.6 P1-BENCH semantics: nonpositive is NOT pma missing.
+        # log mode maps v<=0 to non-finite payload (-Inf for v==0, NaN
+        # for v<0); pma is set to 0 only when t0 itself was raw-missing
+        # (dataio's row-level cascade). We do NOT auto-compute an
+        # "effective missing rate" because it would require re-running
+        # normalization and counting pma zeros, which is the
+        # algorithm's responsibility (deferred until writer round
+        # integrates pma instrumentation).
         "nonpositive_rate": round(nonpositive / total_cells, 6) if total_cells else 0.0,
         "value_min": round(min(values), 4) if values else 0.0,
         "value_max": round(max(values), 4) if values else 0.0,
         "value_median": round(statistics.median(values), 4) if values else 0.0,
-        "input_sha256": desc.get("input_sha256", ""),
-        "derivation_sha256": main_sha,
+        # Provenance: two distinct SHA256s (round-7.6 naming tightening).
+        # analysis_input_sha256 is what the engine actually reads (= the
+        # main.txt we just hashed); source_sha256 is the upstream tsv
+        # the user provided (declared in manifest.description). The
+        # former is what makes the benchmark result reproducible.
+        "analysis_input_sha256": main_sha,
+        "source_sha256": desc.get("source_sha256", ""),
         "derivation_description": desc.get("preprocessing", ""),
-        # Engine-side post-filter counts (filled in after first run):
-        "genes_after_dedup": "",
-        "genes_after_repeat_filter": "",
-        "genes_after_missing_filter": "",
-        "genes_after_threshold_filter": "",
-        "final_retained_genes": "",
+        "final_retained_genes": "",  # filled after first formal run
     }
 
 
@@ -659,7 +670,7 @@ CSV_FIELDS = (
     + ["input_rows", "T", "reps",
        "raw_missing_rate", "zero_rate", "nonpositive_rate",
        "unique_gene_names", "duplicate_gene_rows",
-       "input_sha256", "derivation_sha256"]
+       "analysis_input_sha256", "source_sha256"]
     + ["final_retained_genes", "profiles", "n_perms", "permutation_mode"]
     + ["end_to_end_wall_s", "core_wall_s", "peak_rss_mib", "exit_code"]
     + [f"stage_{key}_s" for key in STAGE_KEYS]
@@ -754,8 +765,8 @@ def _csv_row(dataset_id: str, run_idx: int, kind: str, lang: str,
         "nonpositive_rate": profile["nonpositive_rate"],
         "unique_gene_names": profile["unique_gene_names"],
         "duplicate_gene_rows": profile["duplicate_gene_rows"],
-        "input_sha256": profile["input_sha256"],
-        "derivation_sha256": profile["derivation_sha256"],
+        "analysis_input_sha256": profile["analysis_input_sha256"],
+        "source_sha256": profile["source_sha256"],
         "final_retained_genes": summary.get("genes_retained", ""),
         "profiles": summary.get("profiles", ""),
         "n_perms": "",  # manifest-driven, surfaced in summary.md
@@ -789,7 +800,8 @@ def _csv_row(dataset_id: str, run_idx: int, kind: str, lang: str,
 
 def _write_summary_md(out_dir: Path, dataset_id: str, profile: dict,
                       py_payloads: list[dict], java_payloads: list[dict],
-                      consistency: dict, env: dict, args: argparse.Namespace) -> None:
+                      consistency: dict, determinism: dict,
+                      env: dict, args: argparse.Namespace) -> None:
     """Write the main table. Round-7.5:
 
     - **end_to_end_wall** is the cross-language-comparable metric
@@ -815,32 +827,51 @@ def _write_summary_md(out_dir: Path, dataset_id: str, profile: dict,
         f"- platform: {env['platform']}",
         f"- CPU: {env['cpu_model']} ({env['logical_cpu_count']} logical), RAM {env['ram_gib']} GiB",
         "",
-        "> **Performance vs Compatibility**: The first-column judgment is "
+        "> **Performance vs Compatibility**: First-column judgment is "
         "**assignment_exact** (Java vs PySTEMTC profile_id order on every "
         "retained gene). Performance numbers (end-to-end wall, peak RSS) "
-        "are descriptive, NOT release-blocking. The Py/Java end-to-end ratio "
-        "above 1 is *not* a release gate -- it would be *fair* to compare "
-        "now because both languages use the same subprocess-isolated "
-        "measurement protocol.",
+        "are descriptive, NOT release-blocking.",
         "",
-        "## Dataset profile (round-7.5 expanded schema)",
+        "> **Py/Java e2e ratio is PROVISIONAL (round-7.6 ruling)**: Java's "
+        "fresh JVM runs the full batch (analysis + genetable + profiletable "
+        "writes). PySTEMTC's fresh subprocess currently runs analysis only "
+        "-- the writer (`STEMResult.write_java_tables`) is **not yet** "
+        "implemented. Once writer is integrated into the Python worker "
+        "path, the ratio becomes the official cross-language baseline.",
+        "",
+        "## Dataset profile (round-7.6 schema: smaller is better)",
         "",
         "| dataset_id | input_rows | unique_genes | dup_rows | T | reps |",
         "|---|---|---|---|---|---|",
         f"| {dataset_id} | {profile['input_rows']} | {profile['unique_gene_names']} |"
         f" {profile['duplicate_gene_rows']} | {profile['T']} | {profile['reps']} |",
         "",
-        "| raw_missing | zero | nonpositive (= effective missing under log) | value range | value_median |",
+        "| raw_missing | zero | nonpositive (raw, NOT pma missing) | value range | value_median |",
         "|---|---|---|---|---|",
         f"| {profile['raw_missing_rate']:.4f} | {profile['zero_rate']:.4f} |"
         f" {profile['nonpositive_rate']:.4f} | [{profile['value_min']}, {profile['value_max']}] |"
         f" {profile['value_median']} |",
         "",
-        "### Provenance (sha256)",
+        "> **Round-7.6 P1-BENCH semantic fix**: `nonpositive_rate` is the "
+        "share of raw cells with `value <= 0`. Under log mode these cells "
+        "produce **non-finite payloads** (`-Inf` for `v == 0`, `NaN` for "
+        "`v < 0`) per `_log_java` in `src/pystemtc/normalize.py:20-26`. They "
+        "do **NOT** automatically become pma-missing -- pma is set to 0 "
+        "only when t0 itself was raw-missing (row-level cascade). We do not "
+        "auto-compute an `effective_missing_rate` here because that would "
+        "require running normalization and counting pma zeros, which is "
+        "the algorithm's responsibility (deferred until the writer round "
+        "adds pma instrumentation).",
         "",
-        f"- input_sha256 (from manifest.description): `{profile['input_sha256'] or '(not provided)'}`",
-        f"- derivation_sha256 (main.txt on disk): `{profile['derivation_sha256']}`",
+        "### Provenance (sha256, round-7.6 naming)",
+        "",
+        f"- analysis_input_sha256 (main.txt on disk, what the engine reads): `{profile['analysis_input_sha256']}`",
+        f"- source_sha256 (upstream tsv from manifest.description): `{profile['source_sha256'] or '(not provided)'}`",
         f"- derivation_description: {profile['derivation_description'] or '(none)'}",
+        "",
+        "> The `analysis_input_sha256` is what makes the benchmark result "
+        "reproducible; `source_sha256` belongs to provenance one level up.",
+        "",
         "",
         "## assignment_exact (round-7.5; ordered list, NOT set)",
         "",
@@ -856,6 +887,27 @@ def _write_summary_md(out_dir: Path, dataset_id: str, profile: dict,
         lines += ["", "First mismatches:", ""]
         for g, java_l, py_l in consistency["first_mismatches"]:
             lines.append(f"  - `{g}`: java={java_l}  py={py_l}")
+    lines += [
+        "",
+        "## Determinism sanity (round-7.6 P2)",
+        "",
+        "Both languages should be deterministic on fixed input + seed; "
+        "if any formal run produces a different profile_ids set, that's a "
+        "real bug (silently broken run).",
+        "",
+        f"- Python: {'PASS' if determinism['py_consistent'] else 'FAIL'}"
+        f" (formal runs {len(py_payloads)})",
+        f"- Java:   {'PASS' if determinism['java_consistent'] else 'FAIL'}"
+        f" (formal runs {len(java_payloads)})",
+    ]
+    if determinism.get("py_diff_examples"):
+        lines += ["", "Python non-determinism examples (run_idx, gene, ref, this):"]
+        for ex in determinism["py_diff_examples"]:
+            lines.append(f"  - run{ex[0]} `{ex[1]}`: ref={ex[2]}  this={ex[3]}")
+    if determinism.get("java_diff_examples"):
+        lines += ["", "Java non-determinism examples (run_idx, gene, ref, this):"]
+        for ex in determinism["java_diff_examples"]:
+            lines.append(f"  - run{ex[0]} `{ex[1]}`: ref={ex[2]}  this={ex[3]}")
     lines += [
         "",
         "## Compatibility C1",
@@ -1002,8 +1054,39 @@ def main() -> None:
                          "n_mismatches": 0, "first_mismatches": []}
     if py_payloads and java_payloads:
         consistency = _compare_consistency(py_payloads[0], java_payloads[0])
+    # Round-7.6 P2: determinism sanity check across formal runs. Both
+    # languages are deterministic on fixed input/seed; if any run
+    # produces a different profile_ids set, that's a real bug.
+    determinism: dict = {"py_consistent": True, "java_consistent": True,
+                          "py_diff_examples": [], "java_diff_examples": []}
+    if len(py_payloads) >= 2:
+        ref = py_payloads[0]["gene_assignments"]
+        for k, p in enumerate(py_payloads[1:], start=2):
+            for g in ref:
+                if g in p["gene_assignments"] and list(p["gene_assignments"][g]) != list(ref[g]):
+                    determinism["py_consistent"] = False
+                    determinism["py_diff_examples"].append(
+                        (k, g, list(ref[g]), list(p["gene_assignments"][g]))
+                    )
+                    if len(determinism["py_diff_examples"]) >= 3:
+                        break
+            if not determinism["py_consistent"]:
+                break
+    if len(java_payloads) >= 2:
+        ref = java_payloads[0]["gene_assignments"]
+        for k, p in enumerate(java_payloads[1:], start=2):
+            for g in ref:
+                if g in p["gene_assignments"] and list(p["gene_assignments"][g]) != list(ref[g]):
+                    determinism["java_consistent"] = False
+                    determinism["java_diff_examples"].append(
+                        (k, g, list(ref[g]), list(p["gene_assignments"][g]))
+                    )
+                    if len(determinism["java_diff_examples"]) >= 3:
+                        break
+            if not determinism["java_consistent"]:
+                break
     _write_summary_md(out_dir, dataset_id, profile, py_payloads, java_payloads,
-                      consistency, env, args)
+                      consistency, determinism, env, args)
 
     print(f"profile: {profile_csv}")
     print(f"runs:    {runs_csv}")
@@ -1011,6 +1094,8 @@ def main() -> None:
     print(f"assignment_exact: {consistency['assignment_exact']}  "
           f"(common={consistency['n_common']},"
           f" mismatches={consistency['n_mismatches']})")
+    print(f"determinism: py={determinism['py_consistent']} "
+          f"java={determinism['java_consistent']}")
     print(f"C1 exact: NOT YET ASSESSED (writer not implemented)", flush=True)
 
 
