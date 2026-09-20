@@ -252,17 +252,24 @@ cluster_profiles(sig, models, thr, percentile_thr) -> clusters   # 贪心球：�
 | `clusters` | `[{"id": i, "profile_ids": [...]}]`（i = 生成序） |
 | `timing` | 引擎 stage 计时 dict（键表见下） |
 
-### `_encode_value(value, present)` 真值表（钉死优先级：先按存储 double 分类）
+### `_encode_value(value, present)` 真值表（正交合同，round-7 第 7 轮钉死）
 
-| 存储 double | state | values |
-|---|---|---|
-| NaN（任意 pma） | `"nan"` | `null` |
-| +Inf（任意 pma） | `"positive_infinity"` | `null` |
-| −Inf（任意 pma） | `"negative_infinity"` | `null` |
-| 有限 & pma==0 | `"missing"` | 保留填充值 |
-| 有限 & pma!=0 | `"finite"` | 原值 |
+**两个维度正交**，任一维度都不能推出另一维度：
 
-不变量：`values[i] is null ⟺ state ∈ {nan, positive_infinity, negative_infinity}`；`state=="missing" ⟹ present==False`、`present==True ⟹ state=="finite"`。注意非有限 payload 落在 all-missing 格（present=False）时 state 报**非有限态**而非 missing——c14 的 `present=False ∧ −Inf` 是实证（S_0003 末列）。**`values` 是无损 Java 矩阵快照，writer（未来）消费 STEMResult 内部 floats**：由 (value, state, present) 足以精确重建 Java genetable 任意格（含 `""` 判别、`-0.00` 与 ∞/U+FFFD 渲染）。严格 JSON：`json.dumps(to_dict, allow_nan=False)` 必须成功（测试钉死）。
+- `present` = Java pma 是否 present 的**唯一权威字段**（与 `_encode_value` 无函数依赖，仅作为传入位）；schema 上由 `GeneAssignment.present` 字段独立报出，不在 `value_states` 里重复。
+- `value_states` = 存储 double 的 payload 类别。**非有限 payload 与 present 无关**——可以是 `present=True` 也可以是 `present=False`。
+
+| 存储 double | present | state | values |
+|---|---|---|---|
+| NaN | True/False | `"nan"` | `null` |
+| +Inf | True/False | `"positive_infinity"` | `null` |
+| −Inf | True/False | `"negative_infinity"` | `null` |
+| 有限 | True | `"finite"` | 原值 |
+| 有限 | False | `"missing"` | 填充值（0.0 或 −v0 幻影） |
+
+**正确等价**：`state=="finite" ⇔ value 有限 ∧ present==True`；`state=="missing" ⇔ value 有限 ∧ present==False`。**禁止**写成 `present=True ⇒ state=="finite"`（c14 实证 `present=False ∧ −Inf` 报 `"negative_infinity"`，同理 `present=True ∧ −Inf` 也报 `"negative_infinity"`，不是 `finite`）。
+
+**为何不能折叠成 missingness-only 字段**：那样会丢掉 Java 存储 payload（c14 末列 −Inf、c13 末列幻影 0.948），把 `value_states` 重命名为 `missingness_state` 是第 7 轮专家**明令否决**的——字段名保留 `value_states`，含义为"这个 cell 实际保存的 double 是什么类别"，与 `present` 各司其职。M4 writer 必须读 (value, state, present) 三维才能精确重建 Java genetable（含 `""` vs 格式化的判别、`-0.00` 与 ∞/U+FFFD 渲染）。严格 JSON：`json.dumps(to_dict, allow_nan=False)` 必须成功（测试钉死）。
 
 ### timing 键表（`time.perf_counter` 纯环绕现有阶段，不改任何计算顺序）
 
@@ -275,6 +282,8 @@ cluster_profiles(sig, models, thr, percentile_thr) -> clusters   # 贪心球：�
 ### 发布文案模板
 
 > "Compatibility-first implementation. The V1.0 core intentionally favors behavioral fidelity over vectorized performance." + 实测数字（`tools/bench.py` 三档：300×6T 0.3s / 3000×10T 29.3s / 10000×10T 53.5s wall；peak RSS ~870 MiB）。**870 MiB 不得称轻量**。
+
+**资源预算提示（round-7 专家原话插入）**：在当前 Windows benchmark 中，10,000 spots × 10 time points、Java 默认兼容参数下观察到约 873 MiB peak RSS。资源受限环境应在正式分析前用代表性输入做 benchmark。**为降低资源使用而修改 STEM 算法参数可能改变 model profiles 及最终结果，因此兼容模式下不建议仅以性能为目的修改这些参数**（不许写"内存不足时把 T 调小/调 candidate_cap 调子集"之类的指引——T/max_unit_change/candidate_cap/nike 都属算法参数，调整即破坏 Java 兼容性）。
 
 ### format_java_double 晋升
 
