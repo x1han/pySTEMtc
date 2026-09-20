@@ -34,6 +34,12 @@ class SpotSet:
     gene_ids: list[str]
     probe_ids: list[str]
     sample_labels: list[str]
+    # round-7.2: original Java-STEM file column headers for the spot/probe
+    # and gene columns (parsed by read_stem_file, propagated to writer).
+    # path entry keeps the verbatim header text; DataFrame entry uses
+    # canonical Python defaults ("spot" / "gene").
+    probe_header: str = ""
+    gene_header: str = ""
 
 
 @dataclass
@@ -59,6 +65,10 @@ class STEMDataset:
     repeat_corr_sorted: list[float] | None
     sample_labels: list[str]
     filtered_genes: list[tuple[str, str, str]] = field(default_factory=list)  # (gene, probe, reason)
+    # round-7.2: same Java-STEM file column headers, propagated from
+    # SpotSet (path entry) or canonical defaults (DataFrame entry).
+    probe_header: str = ""
+    gene_header: str = ""
 
 
 def gene_names(dataset: STEMDataset) -> list[str]:
@@ -172,6 +182,8 @@ def build_stem_dataset(main: SpotSet, repeats: list[SpotSet], mode: str, config)
                 gene_ids=[rep.spot_genes[si] for si in spot_rows],
                 probe_ids=[rep.spot_ids[si] for si in spot_rows],
                 sample_labels=list(main.sample_labels),
+                probe_header=main.probe_header,
+                gene_header=main.gene_header,
             )
             for rep in gt_repeats
         ]
@@ -210,6 +222,8 @@ def build_stem_dataset(main: SpotSet, repeats: list[SpotSet], mode: str, config)
         repeat_corr_sorted=repeat_corr_sorted,
         sample_labels=list(main.sample_labels),
         filtered_genes=filtered,
+        probe_header=main.probe_header,
+        gene_header=main.gene_header,
     )
 
 

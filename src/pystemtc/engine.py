@@ -333,6 +333,11 @@ class STEM:
 
         input_record = dict(input_info)
         input_record["time_points"] = list(ds.sample_labels)
+        # round-7.2: propagate the source-file column headers verbatim.
+        # DataFrame entry sets these to canonical defaults ("spot"/"gene");
+        # path entry preserves the original Java-STEM file text.
+        input_record["probe_header"] = ds.probe_header
+        input_record["gene_header"] = ds.gene_header
         timing["wall"] = time.perf_counter() - wall_start
 
         return STEMResult(

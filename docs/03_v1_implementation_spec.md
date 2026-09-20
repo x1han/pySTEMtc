@@ -28,6 +28,16 @@
   - 延续映射：旧 Level A ≈ A（含 observed tally）；旧 Level B ≈ B。
 - **M2 正式 GO（第 5 轮门禁结论，2026-09-19）**。M3 范围锁定：c13/c14 金标扩展（§1.9）→ git+CI → benchmark（只测不优化）→ 其余收尾；**不扩大范围、不做新功能**。
 - **writer 字符集裁决（第 6 轮冻结，Compatibility C 的 writer 轮定义）**：C 层"逐字段一致"按**解码后字段**判定（decoded-table-field exact）；字节级 exact 仅在**显式 pin 字符集与行分隔符**时承诺；默认跟随**运行平台默认字符集**（镜像 Java 行为）并提供 `encoding=` 参数（实现于 writer 轮）。∞（U+221E）/−∞/U+FFFD 的渲染形式无条件复刻（§1.7）。
+- **Compatibility C 验收分级冻结（第 7.2 轮）**：
+  - **C1 decoded-content exact**：header（含原始 gene/probe header）、row order、profiletable 全部字段、genetable 全部字段、空缺格空串 `""`、末列无条件输出、`-0.00` 的负零渲染、`±∞` / `U+FFFD` 的特殊值渲染、tie profile 顺序（`;` 分隔）。Java 与 Python 解码后表格内容**逐字段一致**。
+  - **C2 byte exact**：仅在调用方**显式 pin encoding 与 line-ending** 后才要求字节级一致（默认跟随平台默认字符集；见 writer 字符集冻结）。未 pin 时只承诺 C1。
+- **writer API 接口冻结（第 7.2 轮）**：`result.write_java_tables(output_dir, prefix=None)`：
+  - `prefix` 显式 → 写入 `<prefix>_genetable.txt` / `<prefix>_profiletable.txt`（与 Java batch `<defaults文件名>_genetable.txt` 命名一致）。
+  - `prefix=None` + `result.input["data_file"]` 是 path 字符串 → `prefix = Path(data_file).stem`（自动从来源推导）。
+  - `prefix=None` + `result.input["form"] == "dataframe"` → 抛 `ValueError("write_java_tables: prefix required for DataFrame-built results; pass prefix= to specify the output basename.")`。**禁止悄悄用 data file stem 替代——会产生假兼容**。
+  - CLI 从 config 文件运行时：`prefix = config_path.stem`（自然对接）。
+  - 字符集与行分隔符：`encoding` 参数（默认平台默认）；`newline` 参数（默认跟随 `open()` 平台默认）。C1 不受 encoding/newline 影响；C2 需要两者都显式 pin。
+- **原始 header 元数据钉死（第 7.2 轮，writer 前置 P1-2）**：`SpotSet` 与 `STEMDataset` 增 `probe_header: str` 与 `gene_header: str` 两个字段，path 入口 verbatim 保留（`read_stem_file` 一直解析但之前丢弃了）；DataFrame 入口默认 `"spot"` / `"gene"`（canonical Python header，writer 始终从 `result.input` 派生而非从 DataFrame-side 默认猜）。M4 writer 消费 `result.input["probe_header"]` / `result.input["gene_header"]` 写表头列名——表头来自原 Java-STEM 文件，**不硬编码** `Gene Symbol` / `SPOT`。新 fixture `tests/golden/headers/custom_header.txt`（Probe_ID / SYMBOL_X）钉这一行为。
 - **CLI 裁决（第 6 轮冻结）**：退出码 `0` 成功 / `1` 运行失败 / `2` 用法错误；`batch` 模式单配置失败**继续**处理其余配置，结束时以 stderr 汇总失败清单；stdout 保持**简洁成功摘要**（行数级镜像 Java batch，不做逐 gene 噪声输出）。
 - **M5 warning 冻结原文（第 6 轮冻结；第 5 轮 N9 定组合、第 6 轮定文案）**：仅 `none_add0 × permute_t0=True` 组合弹运行时 warning，**只 warn 一次**，文案冻结为："`normalize='none_add0'` with `permute_t0=True` permutes the synthetic zero baseline together with observed time points, matching legacy STEM v1.3.14 behavior. Interpret permutation-based significance with caution." legacy 有放回置换不逐次警告，由 metadata（`legacy_with_replacement`/`permutation_mode`）+ 文档承载；warning 只说明风险，不改计算结果。
 
@@ -256,7 +266,7 @@ cluster_profiles(sig, models, thr, percentile_thr) -> clusters   # 贪心球：�
 
 **两个信息维度必须同时保留，不得互相替代**：
 
-- `present` = Java pma 是否 present 的**唯一权威字段**（与 `_encode_value` 无函数依赖，仅作为传入位）；schema 上由 `GeneAssignment.present` 字段独立报出，不在 `value_states` 里重复。
+- `present` = Java pma 是否 present 的**唯一权威字段**，作为独立字段原样保留；schema 上由 `GeneAssignment.present` 字段独立报出，不在 `value_states` 里重复。**`_encode_value` 不会改变 present**（它读 `present`，把信息反映到 `value_states` 与 `values`，但 `present` 本身保持原样由调用方报出）。**非有限 payload 的 state 不受 present 影响**；**有限 payload 的 state 由 present 区分为 `"finite"` 或 `"missing"`**。
 - `value_states` = 存储 double 的 payload 类别。**非有限 payload 的分类独立于 present**；对于**有限 payload**，再由 present 区分 `"finite"` 与 `"missing"`。
 
 | 存储 double | present | state | values |
@@ -292,6 +302,60 @@ cluster_profiles(sig, models, thr, percentile_thr) -> clusters   # 贪心球：�
 ### format_java_double 晋升
 
 现居 `tests/test_integration_fixture.py` 的 `NumberFormat` 复刻（ENGLISH、2 位小数 HALF_EVEN、千分位、NaN→U+FFFD、±Inf→±∞）在 **writer 轮**晋升 `src/pystemtc/javaformat.py`（`write_java_tables` 的格式化内核），测试改为 import，行为不变。
+
+### `write_java_tables` writer 接口预写（round-7.2 第 8 轮实现目标，**本轮不实现**）
+
+```python
+# src/pystemtc/result.py
+class STEMResult:
+    def write_java_tables(
+        self,
+        output_dir: str | os.PathLike,
+        prefix: str | None = None,
+        encoding: str | None = None,   # default platform default
+        newline: str | None = None,    # default open() default
+    ) -> list[str]:
+        """Write genetable.txt and profiletable.txt under output_dir.
+
+        Returns the list of written file paths.
+        """
+```
+
+**C1 decoded-content exact 必须满足**（验收清单，详见 §0 冻结）：
+- 第一行表头 `<gene_header>\t<probe_header>\tProfile\t<t1>\t<t2>\t...\t<tT>`，其中 `<gene_header>` / `<probe_header>` 取自 `result.input["gene_header"]` / `result.input["probe_header"]`（verbatim path header）。
+- 每个 gene 行末列（最后一列 `<tT>`）**无条件渲染**——即使 present=False 也用 `format_java_double` 输出存储 double（Java 行为；c14 实证 `-∞`）。
+- 空缺格（finite+present=False 且 value 是填充值）→ `format_java_double` 输出；非 finite payload → 不强制空串（按存储值渲染）。
+- `-0.00` 的负零渲染：`(value, value_state, present)` 三维必须支持（schema v2 round-7.1 已提供）。
+- tie profile 顺序：`profile_ids` 升序以 `;` 分隔。
+
+**`format_java_double`（从 tests/test_integration_fixture.py 晋升）**：
+- `Decimal(float(value)).quantize(Decimal(1).scaleb(-2), rounding=ROUND_HALF_EVEN)` + 千分位 `,` 分隔。
+- `NaN` → U+FFFD；`±Inf` → ±∞（U+221E）；`-0.00` 走 Decimal 路径时可能渲染为 `0.00`（HALF_EVEN）——**writer 必须显式检测原值是否带负号**，保持 `-0.00` 字面。
+
+**`prefix` 解析规则**（§0 writer API 冻结）：
+- `prefix` 显式 → verbatim。
+- `prefix=None` + `input.form == "path"` → `Path(input.data_file).stem`。
+- `prefix=None` + `input.form == "dataframe"` → `ValueError`。
+
+**`encoding` 与 `newline`**：
+- 默认行为：跟随 `open(output_dir/prefix+"_genetable.txt", "w", encoding=platform_default_encoding)`。
+- 显式 pin `encoding="utf-8"` + `newline="\n"` 才承诺 C2 byte-exact。
+
+**验收**：14 套 c01-c14 fixture + custom_header fixture 全部 C1 decoded-content exact；C2 byte-exact 在显式 pin encoding/newline 后比对 Java batch 输出。
+
+### 原始 header 元数据链（round-7.2 P1-2 落地状态）
+
+```
+read_stem_file(path) ─► SpotSet(probe_header, gene_header)  [verbatim, path 入口]
+                         │
+dataframe_to_spotset(df)► SpotSet(probe_header="spot"|"probe", gene_header="gene")  [canonical Python]
+                         │
+build_stem_dataset(ss) ─► STEMDataset(probe_header, gene_header)  [透传]
+                         │
+engine.fit(...) ─► result.input["probe_header"], result.input["gene_header"]
+```
+
+`GeneTable` 内部数据结构**不重复**存 header（P1-A 决定）——writer 直接走 `result.input` 即可；`GeneTable` 与 `SpotSet` 在 builder 链上的 header 来源相同（path 入口走 `main.probe_header/gene_header`，DataFrame 走 builder 默认），不会发生漂移。
 
 
 ## 2. 解冻区（unfrozen，按第 6 轮专家裁决重整，2026-09-19）

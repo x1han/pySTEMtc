@@ -265,6 +265,8 @@ def read_stem_file(
         gene_ids=genenames,
         probe_ids=list(probenames),
         sample_labels=dsamplemins,
+        probe_header=probe_header,
+        gene_header=gene_header,
     )
 
 
@@ -358,6 +360,12 @@ def dataframe_to_spotset(df, takelog: bool = False, add0: bool = False):
 
     labels = ["0"] + [str(c) for c in time_cols] if add0 else [str(c) for c in time_cols]
 
+    # round-7.2: DataFrame entry has no Java-STEM file header semantics; use
+    # canonical Python defaults.  The writer re-derives from result.input
+    # anyway (spec §1.11).
+    probe_header = "spot" if has_spot else "probe"
+    gene_header = "gene"
+
     return SpotSet(
         raw_data=data,
         raw_pma=pma,
@@ -365,4 +373,6 @@ def dataframe_to_spotset(df, takelog: bool = False, add0: bool = False):
         gene_ids=genenames,
         probe_ids=list(probenames),
         sample_labels=labels,
+        probe_header=probe_header,
+        gene_header=gene_header,
     )

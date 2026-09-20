@@ -231,10 +231,53 @@ def test_config_and_input_shapes():
     expected = stemconfig_keys - {"data_file", "repeat_files"}
     assert set(payload["config"]) == expected
     assert set(payload["config"]) == set(CONFIG_ALGORITHM_KEYS)
-    assert set(payload["input"]) == {"form", "data_file", "repeat_files", "time_points"}
+    assert set(payload["input"]) == {
+        "form",
+        "data_file",
+        "repeat_files",
+        "time_points",
+        "probe_header",  # round-7.2
+        "gene_header",   # round-7.2
+    }
     assert payload["input"]["form"] == "path"
     assert payload["input"]["data_file"].endswith("synth6d.txt")
+    # c14 fixture uses the canonical Java STEM headers; the writer will
+    # consume these via result.input["probe_header"]/["gene_header"].
+    assert payload["input"]["probe_header"] == "SPOT"
+    assert payload["input"]["gene_header"] == "Gene Symbol"
     assert result.metadata["sample_labels"] == payload["input"]["time_points"]
+
+
+def test_custom_header_propagated():
+    """round-7.2 P1-2: non-default headers from the path entry must reach
+    ``result.input`` verbatim — the writer will consume them.  This pins
+    the SpotSet → STEMDataset → input["probe_header"] / input["gene_header"]
+    propagation chain using a fixture whose headers are NOT the canonical
+    ``SPOT`` / ``Gene Symbol`` defaults.
+    """
+    from pathlib import Path
+    from pystemtc.dataio import read_stem_file
+    from pystemtc.dataset import build_stem_dataset
+    from pystemtc.config import STEMConfig
+
+    path = (
+        Path(__file__).resolve().parent / "golden" / "headers" / "custom_header.txt"
+    )
+    ss = read_stem_file(str(path), spot_included=True, takelog=False)
+    assert ss.probe_header == "Probe_ID"
+    assert ss.gene_header == "SYMBOL_X"
+
+    cfg = STEMConfig(normalize="normalize", max_missing=0, min_abs_expr=0.5)
+    ds = build_stem_dataset(ss, [], "different_periods", cfg)
+    assert ds.probe_header == "Probe_ID"
+    assert ds.gene_header == "SYMBOL_X"
+
+    # The user-facing c14 fixture uses canonical headers; the chain still
+    # surfaces them verbatim.  This is a separate sanity guard.
+    from test_golden import _run_case
+    c14 = _run_case("c14_log_missing").to_dict()
+    assert c14["input"]["probe_header"] == "SPOT"
+    assert c14["input"]["gene_header"] == "Gene Symbol"
 
 
 # 9 --- clusters / filtered_genes shapes ---------------------------------------
