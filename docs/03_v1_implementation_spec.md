@@ -304,7 +304,7 @@ cluster_profiles(sig, models, thr, percentile_thr) -> clusters   # 贪心球：�
 6. ~~PyPI distribution 名与 import namespace~~ **已于第 4 轮定案并移回冷冻区**：`pystemtc`（PyPI API 404 实证 2026-09-19）；发布前复检要求已写入 §0。
 7. **JRE 17 漂移 characterization**：**阻塞——本机仅有 JRE 1.8.0_451，无 JRE 17**；待用户安装后执行（结果只作附加证据，JRE 8 仍是唯一 oracle）。warning 策略已定案，**文案冻结原文移入 §0**（M5 warning 冻结），本条只保留 JRE 17 环境阻塞本身。
 8. **CLI（第 5 轮定向，M4）**：`pystemtc run --config <defaults.txt> --output <dir>` 与 `pystemtc batch --config-dir <dir> --output <dir>` 双入口；defaults.txt 保持一等输入；不复刻 `stem.jar -b` 的历史参数形式。**裁决（退出码 0/1/2、batch 失败继续 + stderr 总结、stdout 简洁成功）已落 §0，实现于下一轮（CLI 轮）**。
-9. **`to_dict()` schema**：**v2 已实现（第 6 轮，全字段表见 §1.10），待 post-review 最终确认**；v1 提案（schema_version=1、`reference_version` 字符串、仅 null 编码）被 v2 取代（`reference` 对象、`value_states` 五态、`profile_ids`、`input`/`timing` 段）。
+9. **`to_dict()` schema**：**v2 已实现 + round-7.1 post-review 终确认（2026-09-20）**，全字段表见 §1.10；v1 提案（schema_version=1、`reference_version` 字符串、仅 null 编码）被 v2 取代（`reference` 对象、`value_states` 五态、`profile_ids`、`input`/`timing` 段）。
 10. **Python 版本矩阵**：**requires-python 已定 3.11**（第 6 轮，CI matrix 3.11/3.12/3.14）；**依赖下界 provisional**（`numpy>=2.4,<3`、`pandas>=3.0,<4`），冻结条件 = 3.11 CI 绿（M6 push 后）。
 11. **Compatibility C 数据保真**：数据通道已修复（P1，§1.7：无重复直通 + all-missing payload 保留），`write_java_tables` 的 writer 实现待下一轮；本条在 writer 实现获认可后关闭。
 
