@@ -928,18 +928,16 @@ def _write_summary_md(out_dir: Path, dataset_id: str, profile: dict,
         f"- platform: {env['platform']}",
         f"- CPU: {env['cpu_model']} ({env['logical_cpu_count']} logical), RAM {env['ram_gib']} GiB",
         "",
-        "> **Performance vs Compatibility**: First-column judgment is "
-        "**assignment_exact** (Java vs PySTEMTC profile_id order on every "
-        "retained gene). Performance numbers (end-to-end wall, peak RSS) "
-        "are descriptive, NOT release-blocking.",
+        "> **Performance vs Compatibility (FINAL-A)**: First-column "
+        "judgment is **assignment_exact** (Java vs PySTEMTC profile_id "
+        "order on every retained gene).  Performance numbers are "
+        "descriptive only.",
         "",
-        "> **Py/Java e2e ratio (round-8; writer integrated)**: Both "
-        "languages now run analysis + genetable + profiletable writes in "
-        "their fresh subprocess / JVM.  The ratio is therefore comparable "
-        "for any dataset where the writer cost is non-trivial; on R1 "
-        "(Brain trajectory, T=7, n=1999) the writer cost is small "
-        "relative to permutation, so the ratio is dominated by Python "
-        "core overhead.  **NOT** a release gate -- descriptive only.",
+        "> **R1 observed Py/Java ratio is descriptive only.**  Its "
+        "source is not characterized.  It is **NOT** a release gate.  "
+        "**V1 has no performance pass/fail threshold** -- the writer "
+        "is now integrated so both languages run equivalent workload "
+        "(analysis + writer).",
         "",
         "## Dataset profile (round-7.6 schema: smaller is better)",
         "",
@@ -1049,7 +1047,11 @@ def _write_summary_md(out_dir: Path, dataset_id: str, profile: dict,
         lines += ["> Python worker did not produce genetable / profiletable; C1 / C2 not assessed."]
     lines += [
         "",
-        "## Main table -- process-level wall (same timing protocol; workload not yet equivalent)",
+        "## Main table -- equivalent-workload process-level wall",
+        "",
+        "Both languages run analysis + genetable + profiletable writes "
+        "in a fresh subprocess / JVM.  V1 has no performance pass/fail "
+        "threshold.",
         "",
         "| Language | wall median | wall min | wall max | RSS MiB median | exit_code |",
         "|---|---|---|---|---|---|",
@@ -1067,7 +1069,7 @@ def _write_summary_md(out_dir: Path, dataset_id: str, profile: dict,
         )
     if py_e2e and java_e2e:
         ratio = statistics.median(py_e2e) / statistics.median(java_e2e)
-        lines.append(f"\nPy/Java end-to-end ratio (median, descriptive): **{ratio:.2f}x**")
+        lines.append(f"\nPy/Java end-to-end ratio (median, descriptive only, NOT a release gate): **{ratio:.2f}x**")
     if py_core:
         lines += [
             "",

@@ -16,6 +16,7 @@ frozen scope); ``Clustering_Method = K-means`` raises
 from __future__ import annotations
 
 import time
+import warnings
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -109,6 +110,23 @@ class STEM:
         config = self.config
         if repeat_mode is not None:
             config = replace(config, repeat_mode=repeat_mode)
+
+        # M5 (FINAL-A): the (normalize='none_add0', permute_t0=True)
+        # combination permutes the synthetic zero baseline together with
+        # the observed time points, matching legacy STEM v1.3.14 behavior.
+        # The downstream permutation distribution therefore includes a
+        # column of zeros among the candidates, which inflates the
+        # expected count for any model whose t0 is large in magnitude.
+        # Emit the warning once per analysis (NOT once per permutation).
+        if config.normalize == "none_add0" and config.permute_t0:
+            warnings.warn(
+                "M5: normalize='none_add0' with permute_t0=True permutes "
+                "the synthetic zero baseline together with observed time "
+                "points, matching legacy STEM v1.3.14 behavior. "
+                "Interpret permutation-based significance with caution.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         wall_start = time.perf_counter()
         timing: dict[str, float] = {}

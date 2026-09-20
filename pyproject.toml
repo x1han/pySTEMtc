@@ -13,6 +13,9 @@ dependencies = [
     "pandas>=3.0,<4",  # provisional per round-6 ruling — freeze after 3.11 CI green
 ]
 
+[project.scripts]
+pystemtc = "pystemtc.cli:main"
+
 [project.optional-dependencies]
 dev = ["pytest"]
 # benchmark_real.py needs PyYAML for the YAML manifest. Kept out of the

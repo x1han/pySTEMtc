@@ -1,0 +1,8 @@
+pystemtc run --config D:\stem\pySTEMtc\final_acceptance\R1_brain_trajectory\cli_run_config.txt --output D:\stem\pySTEMtc\final_acceptance\R1_brain_trajectory\cli_run_out
+exit_code: 0
+--- stdout ---
+D:\stem\pySTEMtc\final_acceptance\R1_brain_trajectory\cli_run_out\cli_run_config_genetable.txt
+D:\stem\pySTEMtc\final_acceptance\R1_brain_trajectory\cli_run_out\cli_run_config_profiletable.txt
+
+--- stderr ---
+

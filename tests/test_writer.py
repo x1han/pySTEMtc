@@ -368,8 +368,10 @@ def test_profiletable_pvalue_uses_double_to_sz(tmp_path: Path):
 
 
 def test_writer_uses_raw_lf(tmp_path: Path):
-    """All bytes between rows are LF (0x0a); no CR (0x0d) introduced.
-    Java writes CRLF on Windows; this writer is LF-only by default."""
+    """With ``newline='\\n'`` (raw LF, no translation), no CR (0x0d)
+    bytes are introduced.  Java writes CRLF on Windows; this is the
+    raw-LF discipline that pairs with the C1 test sweeps (which
+    normalize CRLF -> LF before comparison)."""
     r = _make_result(
         genes=[_gene("A", "p1", [0],
                      [1.0, 2.0, 3.0],
@@ -377,12 +379,36 @@ def test_writer_uses_raw_lf(tmp_path: Path):
         profiles=[_profile(0, [0.0, 0.0, 0.0])],
         time_points=["t0", "t1", "t2"],
     )
-    paths = r.write_java_tables(tmp_path)
+    paths = r.write_java_tables(tmp_path, encoding="utf-8", newline="\n")
     for p in paths:
         raw = Path(p).read_bytes()
         assert b"\r" not in raw, f"{p} contains CR bytes"
         # LF present (rows are LF-terminated)
         assert raw.count(b"\n") >= 1
+
+
+def test_writer_default_newline_matches_platform(tmp_path: Path):
+    """With ``newline=None`` (default, platform default), the writer
+    defers newline translation to Python's text I/O layer.  On
+    Windows that means CRLF (matching Java's PrintWriter.println()
+    on Windows).  This is the round-7.3 frozen discipline: ``None``
+    means "platform default", not "raw LF"."""
+    r = _make_result(
+        genes=[_gene("A", "p1", [0],
+                     [1.0, 2.0, 3.0],
+                     [True, True, True])],
+        profiles=[_profile(0, [0.0, 0.0, 0.0])],
+        time_points=["t0", "t1", "t2"],
+    )
+    paths = r.write_java_tables(tmp_path)  # encoding=None, newline=None
+    for p in paths:
+        raw = Path(p).read_bytes()
+        # Platform default on Windows is CRLF; row terminators in
+        # the file must therefore include CR before each LF.
+        assert b"\r\n" in raw, (
+            f"{p} missing CRLF row terminator (platform default "
+            f"should produce CRLF on Windows)"
+        )
 
 
 def test_writer_explicit_crlf_translates_lf_only(tmp_path: Path):
@@ -503,6 +529,38 @@ def test_writer_nan_gbk_encoding_yields_question_mark_byte(tmp_path: Path):
     assert b"\x3f" in raw, (
         f"GBK output must contain 0x3F (Java's NaN oracle byte); got {raw!r}"
     )
+
+
+def test_genetable_cell_missing_interior_overrides_nan_payload(tmp_path: Path):
+    """FINAL-A round-1: an INTERIOR cell (j < T-1) with ``present=False``
+    MUST render as the empty cell, regardless of the stored payload
+    (NaN, Inf, any value).  The Java loop at ST.java:3021-3033 writes
+    ``pw.print("\\t")`` (no value) whenever ``pma[i][j] == 0`` for the
+    conditional range.  The LAST column (j == T-1) is unconditional.
+
+    This protects against a class of bug where ``present[j]==False``
+    is silently ignored because the stored double happens to be NaN
+    (which ``format_java_double`` would render as U+FFFD)."""
+    r = _make_result(
+        genes=[_gene("A", "p1", [0],
+                     # t0 = finite, t1 = NaN (would render U+FFFD if
+                     # not skipped), t2 = finite LAST COLUMN
+                     [1.5, float("nan"), 3.5],
+                     # interior cell t1 is missing -> must be empty
+                     [True, False, True])],
+        profiles=[_profile(0, [0.0, 0.0, 0.0])],
+        time_points=["t0", "t1", "t2"],
+    )
+    paths = r.write_java_tables(tmp_path, encoding="utf-8", newline="\n")
+    text = Path(paths[0]).read_text(encoding="utf-8")
+    # data row: gene \t probe \t profile \t 1.50 \t <EMPTY> \t 3.50
+    data_row = text.split(LINE_TERMINATOR)[1]
+    assert data_row == "A\tp1\t0\t1.50\t\t3.50", (
+        f"interior missing+NaN must render empty, got: {data_row!r}"
+    )
+    # U+FFFD must NOT appear anywhere in the file (the missing cell
+    # overrode the NaN payload)
+    assert "\ufffd" not in text
 
 
 def test_write_java_tables_creates_out_dir(tmp_path: Path):

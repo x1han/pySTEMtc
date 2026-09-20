@@ -1,0 +1,10 @@
+pystemtc batch --config-dir D:\stem\pySTEMtc\final_acceptance\R1_brain_trajectory\batch_configs --output D:\stem\pySTEMtc\final_acceptance\R1_brain_trajectory\batch_out
+exit_code: 1  (1 = at least one config failed; batch-continues-on-failure verified)
+--- stdout ---
+D:\stem\pySTEMtc\final_acceptance\R1_brain_trajectory\batch_out\good_genetable.txt
+D:\stem\pySTEMtc\final_acceptance\R1_brain_trajectory\batch_out\good_profiletable.txt
+
+--- stderr ---
+pystemtc batch: configuration / input error in D:\stem\pySTEMtc\final_acceptance\R1_brain_trajectory\batch_configs\bad.txt: D:\stem\pySTEMtc\final_acceptance\R1_brain_trajectory\batch_configs\bad.txt: Data_File not found: D:\stem\no_such_file.txt
+pystemtc batch: 1/2 config(s) failed
+

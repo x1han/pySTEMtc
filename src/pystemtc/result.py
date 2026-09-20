@@ -353,14 +353,13 @@ class STEMResult:
         out_dir: str | Path,
         prefix: str | None = None,
         *,
-        encoding: str | None = "utf-8",
-        newline: str | None = "",
+        encoding: str | None = None,
+        newline: str | None = None,
     ) -> list[str]:
         """Write the Java-shaped genetable and profiletable to ``out_dir``.
 
         File-naming convention (round-7.3 frozen, restored in round-8
-        final patch after the round-7.5/7.6/7.7 prefix API was
-        silently dropped):
+        final patch):
 
           - ``prefix="abc"`` -> ``abc_genetable.txt``, ``abc_profiletable.txt``
           - ``prefix=None`` + path-derived input -> the stem of
@@ -369,12 +368,11 @@ class STEMResult:
             ``None``) -> ``ValueError``; the caller MUST supply an
             explicit ``prefix`` because there is no stem to derive.
 
-        ``encoding`` and ``newline`` are forwarded to :func:`open`.
-        The defaults (``utf-8`` + raw ``\\n``) yield C1-decoded-exact
-        comparisons against the Java golden references
-        (``tests/golden/java_reference/**``); passing
-        ``encoding="gbk", newline="\\r\\n"`` reproduces Java's
-        Windows-default byte stream for C2 byte-exact comparison.
+        ``encoding`` and ``newline`` are forwarded to :func:`open`
+        with ``None`` meaning "platform default" (Java's behavior on
+        the user's host).  For C2 byte-exact comparison against the
+        Java golden oracles (which were produced by JRE 1.8.0_451 on
+        Windows), pass ``encoding="gbk", newline="\\r\\n"`` explicitly.
 
         ``errors="replace"`` is pinned internally -- the API does not
         expose this parameter (round-7.7 P2-3 ruling).
