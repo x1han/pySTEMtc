@@ -934,12 +934,13 @@ def _write_summary_md(out_dir: Path, dataset_id: str, profile: dict,
         "retained gene). Performance numbers (end-to-end wall, peak RSS) "
         "are descriptive, NOT release-blocking.",
         "",
-        "> **Py/Java e2e ratio is PROVISIONAL (round-7.6 ruling)**: Java's "
-        "fresh JVM runs the full batch (analysis + genetable + profiletable "
-        "writes). PySTEMTC's fresh subprocess currently runs analysis only "
-        "-- the writer (`STEMResult.write_java_tables`) is **not yet** "
-        "implemented. Once writer is integrated into the Python worker "
-        "path, the ratio becomes the official cross-language baseline.",
+        "> **Py/Java e2e ratio (round-8; writer integrated)**: Both "
+        "languages now run analysis + genetable + profiletable writes in "
+        "their fresh subprocess / JVM.  The ratio is therefore comparable "
+        "for any dataset where the writer cost is non-trivial; on R1 "
+        "(Brain trajectory, T=7, n=1999) the writer cost is small "
+        "relative to permutation, so the ratio is dominated by Python "
+        "core overhead.  **NOT** a release gate -- descriptive only.",
         "",
         "## Dataset profile (round-7.6 schema: smaller is better)",
         "",
