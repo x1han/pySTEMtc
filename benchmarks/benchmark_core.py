@@ -61,6 +61,12 @@ RESULTS = _HERE / "results"
 
 SEED_DEFAULT = 20260919
 
+# Candidate-profile cap matches engine.STEM(candidate_cap=...) default.
+# Mirrors the worker construction at line ~212; rounds-7 expert attribution
+# of B6's 873 MiB peak to the sample-1M branch is anchored here.
+CANDIDATE_CAP = 1_000_000
+MAX_UNIT_CHANGE = 2  # (2*MUC+1) is the per-column move cardinality
+
 
 @dataclass(frozen=True)
 class BenchSpec:
@@ -291,14 +297,29 @@ def _versions() -> dict[str, str]:
 
 CSV_FIELDS = (
     ["bench", "run", "kind", "spots", "time_points", "repeat_files",
-     "genes", "profiles", "n_perms", "permutation_mode", "wall_s",
-     "peak_rss_mib"]
+     "genes", "profiles", "n_perms", "permutation_mode", "candidate_path",
+     "candidate_universe", "wall_s", "peak_rss_mib"]
     + [f"stage_{key}_s" for key in STAGE_KEYS]
     + ["python", "numpy", "pandas", "platform"]
 )
 
 
+def _candidate_path(spec: BenchSpec) -> tuple[str, int]:
+    """Compute the candidate-profile path the bench will dispatch to, and the
+    universe cardinality (permutation.py ALLPERMSTHRESH + engine.py cap).
+
+    enumerate: ``(2*MAX_UNIT_CHANGE+1)^(T-1) <= CANDIDATE_CAP``
+    sample N:   same universe ``> CANDIDATE_CAP``; ``N`` = ``CANDIDATE_CAP``
+    """
+    universe = (2 * MAX_UNIT_CHANGE + 1) ** (spec.time_points - 1)
+    if universe <= CANDIDATE_CAP:
+        return "enumerate", universe
+    return f"sample {CANDIDATE_CAP // 1_000_000}M", universe
+
+
 def _csv_row(result: dict, run_idx: int, kind: str, versions: dict[str, str]) -> dict:
+    spec = ALL_SPECS[result["bench"]]
+    path, universe = _candidate_path(spec)
     row = {
         "bench": result["bench"],
         "run": run_idx,
@@ -310,6 +331,8 @@ def _csv_row(result: dict, run_idx: int, kind: str, versions: dict[str, str]) ->
         "profiles": result["profiles"],
         "n_perms": result["n_perms"],
         "permutation_mode": result["permutation_mode"],
+        "candidate_path": path,
+        "candidate_universe": universe,
         "wall_s": round(result["wall_s"], 3),
         "peak_rss_mib": round(result["peak_rss_bytes"] / 2**20, 1),
         "python": versions["python"],
@@ -350,19 +373,21 @@ def _write_markdown(
         "## Wall time and memory (medians over formal runs)",
         "",
         "| bench | spots | T | repeat files | genes | profiles | n_perms |"
-        " permutation_mode | wall median s | wall min s | wall max s |"
-        " peak RSS MiB median |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        " permutation_mode | candidate_path | candidate_universe |"
+        " wall median s | wall min s | wall max s | peak RSS MiB median |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for spec in specs:
         runs = formal_by_bench[spec.bench_id]
         walls = [r["wall_s"] for r in runs]
         rss = _median([r["peak_rss_bytes"] for r in runs]) / 2**20
         first = runs[0]
+        cand_path, cand_universe = _candidate_path(spec)
         lines.append(
             f"| {spec.bench_id} | {spec.spots} | {spec.time_points} |"
             f" {spec.repeat_files} | {first['genes']} | {first['profiles']} |"
-            f" {first['n_perms']} | {first['permutation_mode']} |"
+            f" {first['n_perms']} | {first['permutation_mode']} | {cand_path} |"
+            f" {cand_universe:,} |"
             f" {_median(walls):.2f} | {min(walls):.2f} | {max(walls):.2f} | {rss:.1f} |"
         )
     lines += [
