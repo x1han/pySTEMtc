@@ -15,13 +15,15 @@ of the Java golden reference at decoded-text level.  C2 byte-exact is
 explicitly out of scope (see :mod:`test_writer_golden_c2` for byte-exact
 sweeps that don't depend on file-encoding round-trips).
 
-Total cases: 14 golden configs + 2 ``headers_custom`` sweeps (c01 and
-c04 base configs re-run with the custom ``headers_custom.txt`` config
-that swaps ``Gene Symbol`` for ``SYMBOL`` and ``SPOT`` for ``PROBE``)
-= 16 C1 cases per spec round-7.3.  Each case covers BOTH the
-genetable and profiletable comparisons, so 32 line-equal assertions
-total.  (The user's ``30 C1 cases`` count is documented as 30
-sub-cases within this 16-file matrix; we report per-file.)
+Total cases: 14 golden configs (c01..c14) + 1 ``headers_custom``
+configuration = **15 cases**.  Each case covers BOTH the genetable
+and profiletable comparisons, so **30 line-equal assertions total**.
+Round-8 final patch: the previous docstring claimed 16/32 because it
+incorrectly described the ``headers_custom`` config as two sweeps
+(c01-base + c04-base); in reality there is exactly one
+``headers_custom`` reference file (under
+``tests/golden/java_reference/headers_custom/``), so the matrix is
+15 cases x 2 tables = 30.
 """
 
 from __future__ import annotations

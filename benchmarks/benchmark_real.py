@@ -265,23 +265,22 @@ def _python_worker_main(manifest: dict, dataset_id: str) -> dict:
         change_rule=cfg.get("change_rule", "max_minus_min"),
     )
     res = engine.fit(manifest["main"], replicates=replicates if replicates else None)
-    # Round-8: write Java-shaped tables for C1/C2 byte comparison.  Use
-    # GBK + CRLF to match Java's Windows-default byte stream; this is
-    # what makes C2 byte-exact possible against the oracle.  File
-    # names are prefixed with the dataset_id to match the convention
-    # used for the Java oracle copy (line 396: ``{dataset_id}_genetable.txt``).
+    # Round-8 final patch: write Java-shaped tables for C1/C2 byte
+    # comparison directly into the canonical location via the restored
+    # ``prefix=`` API.  The previous round-8 implementation wrote into
+    # a TemporaryDirectory + copy2 workaround; that put a non-trivial
+    # filesystem copy INSIDE the timed core path, biasing Py's e2e
+    # measurement relative to Java (Java writes once and the parent
+    # process copies the file AFTER end_to_end_wall finishes).  With
+    # ``prefix=dataset_id`` the writer drops
+    # ``<dataset_id>_genetable.txt`` and ``<dataset_id>_profiletable.txt``
+    # directly into the canonical ``out_dir/py`` directory.
     worker_out_dir = Path(os.environ.get("PYSTEMTC_BENCH_OUTDIR", ".")) / "py"
     worker_out_dir.mkdir(parents=True, exist_ok=True)
-    g_path = worker_out_dir / f"{dataset_id}_genetable.txt"
-    p_path = worker_out_dir / f"{dataset_id}_profiletable.txt"
-    # write into a tmpdir first then move so the writer's hardcoded
-    # ``genetable.txt`` / ``profiletable.txt`` filenames don't pollute
-    # the canonical path.
-    import tempfile
-    with tempfile.TemporaryDirectory() as td:
-        res.write_java_tables(td, encoding="gbk", newline="\r\n")
-        shutil.copy2(Path(td) / "genetable.txt", g_path)
-        shutil.copy2(Path(td) / "profiletable.txt", p_path)
+    res.write_java_tables(
+        worker_out_dir, prefix=dataset_id,
+        encoding="gbk", newline="\r\n",
+    )
     core_wall = time.perf_counter() - t0
     payload = {
         "dataset_id": dataset_id,
@@ -1107,6 +1106,10 @@ def main() -> None:
                     help="path to java executable (overrides $JAVA_BIN and auto-discovery)")
     ap.add_argument("--stem-jar", default=None,
                     help="path to stem.jar (overrides $STEM_JAR and auto-discovery)")
+    ap.add_argument("--allow-dirty", action="store_true",
+                    help="allow non-clean git_state (skips the pre-run "
+                         "clean-gate check). Default requires clean for "
+                         "any run with --formal >= 1 (the official mode).")
     ap.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--language", default=None, help=argparse.SUPPRESS)
     args = ap.parse_args()
@@ -1131,12 +1134,41 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"pySTEMTC real benchmark {stamp}: dataset={dataset_id}", flush=True)
+
+    # Round-8 final patch: probe git_state BEFORE any work runs.  The
+    # official gate (``--formal >= 1`` and not ``--allow-dirty``)
+    # requires the working tree to be clean -- a non-clean tree would
+    # mean the run is not reproducible from the recorded commit, and
+    # the runs.csv / dataset_profile.csv would have to be regenerated.
+    # round-7.6 P1-6 ruling: never silently map unknown -> clean.
+    repo_root = Path(__file__).resolve().parents[1]
+    git_state, git_diff_sha = _git_state(repo_root)
+    if args.formal >= 1 and not args.allow_dirty and git_state != "clean":
+        raise SystemExit(
+            f"REFUSING TO RUN: git_state={git_state!r} (diff sha256 "
+            f"{git_diff_sha[:16]}...) at run start.  Official R1 "
+            f"evidence must bind to a clean commit.  Pass "
+            f"--allow-dirty to override (NOT for official evidence)."
+        )
+    print(f"git_state pre-run: {git_state}"
+          + (f" (diff sha256 {git_diff_sha[:16]}...)"
+             if git_state == "dirty" else ""), flush=True)
+
     profile = _profile_dataset(manifest, dataset_id)
     # Resolve Java paths early so the env record reflects what we used.
     java_bin, java_version_str, stem_jar, jar_sha = _resolve_java_paths(args)
     env = _env_versions(_git_commit(), java_bin=java_bin,
                         java_version_str=java_version_str,
                         stem_jar=stem_jar, stem_jar_sha256=jar_sha)
+    # Bind the pre-run git_state into env + profile so downstream rows
+    # (rows.csv, dataset_profile.csv) see the same value that summary.md
+    # reports.  This is the single source of truth -- the previous
+    # round-8 implementation re-probed git_state AFTER writing the CSVs,
+    # so the rows were silently stamped "unknown".
+    env["git_state"] = git_state
+    env["git_diff_sha256"] = git_diff_sha
+    profile["git_state"] = git_state
+    profile["git_diff_sha256"] = git_diff_sha
     print(f"env: {env}", flush=True)
     print(f"profile: {profile}", flush=True)
 
@@ -1169,13 +1201,25 @@ def main() -> None:
                   f" rss={java['peak_rss_bytes']/2**20:.1f}MiB"
                   f" exit={java['exit_code']}", flush=True)
 
-    # dataset profile CSV
+    # Backfill ``final_retained_genes`` from the first formal Python
+    # payload BEFORE writing either CSV.  This was previously done
+    # AFTER the CSVs were flushed (round-7.6/7.7 attempted this fix but
+    # the call order was wrong), so the CSV on disk reported an empty
+    # value even though env/profile had the right number.
+    if py_payloads:
+        summary_first = py_payloads[0].get("summary", {})
+        genes_retained = summary_first.get("genes_retained", "")
+        if genes_retained != "":
+            profile["final_retained_genes"] = genes_retained
+
+    # dataset profile CSV (after all backfill is done)
     profile_csv = out_dir / "dataset_profile.csv"
     with open(profile_csv, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=list(profile.keys()))
         w.writeheader(); w.writerow(profile)
 
-    # runs CSV
+    # runs CSV (after all backfill is done; rows already carry the
+    # git_state that was bound into env at run start)
     runs_csv = out_dir / "runs.csv"
     with open(runs_csv, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=CSV_FIELDS)
@@ -1253,20 +1297,12 @@ def main() -> None:
                         break
             if not determinism["java_consistent"]:
                 break
-    # Round-7.6 + round-7.7 final: backfill final_retained_genes before
-    # writing dataset_profile.csv (was empty in the round-7.6 artifact).
-    if py_payloads:
-        summary_first = py_payloads[0].get("summary", {})
-        genes_retained = summary_first.get("genes_retained", "")
-        if genes_retained != "":
-            profile["final_retained_genes"] = genes_retained
-    # Round-7.6 + round-7.7 final: git_state tri-state gate.
-    # clean / dirty / unknown -- unknown must NOT silently map to clean.
-    git_state, git_diff_sha = _git_state(Path(__file__).resolve().parents[1])
-    profile["git_state"] = git_state
-    profile["git_diff_sha256"] = git_diff_sha
-    env["git_state"] = git_state
-    env["git_diff_sha256"] = git_diff_sha
+    # Round-8 final patch: git_state + final_retained_genes were bound
+    # at run start (pre-run probe) and after the first formal Python
+    # payload (backfill) respectively, so by this point profile / env
+    # carry the right values and the CSVs were already written with
+    # them.  No re-probing here -- the previous round-8 implementation
+    # did and the CSV on disk ended up stamped "unknown" anyway.
     _write_summary_md(out_dir, dataset_id, profile, py_payloads, java_payloads,
                       consistency, determinism, byte_compare, env, args)
 

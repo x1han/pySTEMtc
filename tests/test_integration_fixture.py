@@ -8,7 +8,6 @@ value, thousands grouping, "-0.00" for tiny negatives).  The Profile column
 is validated in M2.
 """
 
-from decimal import Decimal, ROUND_HALF_EVEN
 from pathlib import Path
 
 import pytest
@@ -16,6 +15,12 @@ import pytest
 from pystemtc.config import STEMConfig
 from pystemtc.dataio import read_stem_file
 from pystemtc.dataset import build_stem_dataset, gene_names
+# Round-8 final patch: this module previously kept a local copy of
+# ``format_java_double`` (the round-7.1 simpler version with
+# ``Decimal(float(value))``).  The canonical two-path-dispatch
+# implementation now lives in :mod:`pystemtc.javaformat`.  Single
+# source of truth -- never keep two Java formatters in the repo.
+from pystemtc.javaformat import format_java_double
 
 GOLDEN = Path(__file__).parent / "golden"
 
@@ -31,23 +36,6 @@ def _find_input(name: str) -> Path:
         if candidate.exists():
             return candidate
     raise FileNotFoundError(f"could not locate input file {name!r}")
-
-
-def format_java_double(value) -> str:
-    """java.text.NumberFormat(Locale.ENGLISH) with minimumFractionDigits =
-    maximumFractionDigits = 2 (ST.java:3017-3019).
-
-    JDK 8 DecimalFormat rounds HALF_EVEN on the exact binary expansion of the
-    double (verified against JRE 1.8.0_451: 2.675 -> "2.67", -0.0 -> "-0.00",
-    999.995 -> "1,000.00").
-    """
-    d = Decimal(float(value))
-    if d.is_nan():
-        return "\ufffd"  # JDK8 NumberFormat renders NaN as U+FFFD (verified via jjs)
-    if d.is_infinite():
-        return "\u221E" if value > 0 else "-\u221E"
-    q = d.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)
-    return f"{q:,}"
 
 
 def _repeat_spotsets(cfg_path: Path, config):

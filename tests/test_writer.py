@@ -120,7 +120,21 @@ def test_java_double_to_string_default(value, expected):
 
 
 def _make_result(genes, profiles, time_points, gene_header="Gene Symbol",
-                 probe_header="SPOT"):
+                 probe_header="SPOT", *, data_file="g27_1.txt"):
+    """Build a minimal STEMResult for writer tests.
+
+    ``data_file`` defaults to ``"g27_1.txt"`` (path-derived; stem
+    ``"g27_1"`` is used by ``write_java_tables`` when ``prefix=None``).
+    Pass ``data_file=None`` to simulate a DataFrame-derived result
+    (where ``prefix=None`` MUST raise ``ValueError``).
+    """
+    input_dict = {
+        "gene_header": gene_header,
+        "probe_header": probe_header,
+        "time_points": list(time_points),
+    }
+    if data_file is not None:
+        input_dict["data_file"] = data_file
     return STEMResult(
         profiles=profiles,
         gene_assignments=genes,
@@ -128,11 +142,7 @@ def _make_result(genes, profiles, time_points, gene_header="Gene Symbol",
         clusters=[],
         config={},
         metadata={},
-        input={
-            "gene_header": gene_header,
-            "probe_header": probe_header,
-            "time_points": list(time_points),
-        },
+        input=input_dict,
     )
 
 
@@ -437,8 +447,62 @@ def test_write_java_tables_returns_two_string_paths(tmp_path: Path):
     g, p = paths
     assert Path(g).is_absolute()
     assert Path(p).is_absolute()
-    assert Path(g).name == "genetable.txt"
-    assert Path(p).name == "profiletable.txt"
+    # default data_file='g27_1.txt' -> stem 'g27_1'
+    assert Path(g).name == "g27_1_genetable.txt"
+    assert Path(p).name == "g27_1_profiletable.txt"
+
+
+def test_writer_prefix_explicit_overrides_default_stem(tmp_path: Path):
+    """``prefix="abc"`` must be used verbatim, ignoring the
+    data_file stem."""
+    r = _make_result(genes=[], profiles=[],
+                     time_points=["t0"])  # default data_file="g27_1.txt"
+    paths = r.write_java_tables(tmp_path, prefix="abc")
+    assert Path(paths[0]).name == "abc_genetable.txt"
+    assert Path(paths[1]).name == "abc_profiletable.txt"
+    assert Path(paths[0]).exists()
+    assert Path(paths[1]).exists()
+
+
+def test_writer_prefix_default_is_data_file_stem(tmp_path: Path):
+    """``prefix=None`` (default) -> derive from ``result.input['data_file']``
+    stem.  ``g27_1.txt`` -> ``g27_1``."""
+    r = _make_result(genes=[], profiles=[], time_points=["t0"],
+                     data_file="foo/bar/baz.tsv")
+    paths = r.write_java_tables(tmp_path)
+    assert Path(paths[0]).name == "baz_genetable.txt"
+    assert Path(paths[1]).name == "baz_profiletable.txt"
+
+
+def test_writer_prefix_dataframe_raises_value_error(tmp_path: Path):
+    """DataFrame input has ``data_file=None`` -> ``prefix=None``
+    MUST raise ``ValueError`` (round-7.3 frozen contract, restored
+    round-8 final patch)."""
+    r = _make_result(genes=[], profiles=[], time_points=["t0"],
+                     data_file=None)
+    with pytest.raises(ValueError, match="prefix is required"):
+        r.write_java_tables(tmp_path)
+
+
+def test_writer_nan_gbk_encoding_yields_question_mark_byte(tmp_path: Path):
+    """When ``encoding='gbk'`` is passed, ``format_java_double(NaN)``
+    must round-trip to Java's GBK oracle byte ``0x3F`` (``?``).
+    U+FFFD encoded as GBK -> ``?``; Python's text I/O does this
+    automatically, so the writer's only job is to surface ``U+FFFD``
+    (verified by :func:`format_java_double` already)."""
+    r = _make_result(
+        genes=[_gene("A", "p1", [0],
+                     [float("nan")],
+                     [True])],
+        profiles=[_profile(0, [0.0])],
+        time_points=["t0"],
+    )
+    paths = r.write_java_tables(tmp_path, encoding="gbk", newline="\r\n")
+    raw = Path(paths[0]).read_bytes()
+    # Last column (T-1=0) is always rendered -> 0x3F appears once
+    assert b"\x3f" in raw, (
+        f"GBK output must contain 0x3F (Java's NaN oracle byte); got {raw!r}"
+    )
 
 
 def test_write_java_tables_creates_out_dir(tmp_path: Path):

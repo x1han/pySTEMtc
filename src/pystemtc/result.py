@@ -351,14 +351,26 @@ class STEMResult:
     def write_java_tables(
         self,
         out_dir: str | Path,
+        prefix: str | None = None,
         *,
         encoding: str | None = "utf-8",
         newline: str | None = "",
     ) -> list[str]:
         """Write the Java-shaped genetable and profiletable to ``out_dir``.
 
-        ``encoding`` and ``newline`` are forwarded to :func:`open`.  The
-        defaults (``utf-8`` + raw ``\\n``) yield C1-decoded-exact
+        File-naming convention (round-7.3 frozen, restored in round-8
+        final patch after the round-7.5/7.6/7.7 prefix API was
+        silently dropped):
+
+          - ``prefix="abc"`` -> ``abc_genetable.txt``, ``abc_profiletable.txt``
+          - ``prefix=None`` + path-derived input -> the stem of
+            ``result.input['data_file']`` (e.g. ``g27_1``)
+          - ``prefix=None`` + dataframe input (``data_file`` is
+            ``None``) -> ``ValueError``; the caller MUST supply an
+            explicit ``prefix`` because there is no stem to derive.
+
+        ``encoding`` and ``newline`` are forwarded to :func:`open`.
+        The defaults (``utf-8`` + raw ``\\n``) yield C1-decoded-exact
         comparisons against the Java golden references
         (``tests/golden/java_reference/**``); passing
         ``encoding="gbk", newline="\\r\\n"`` reproduces Java's
@@ -372,8 +384,20 @@ class STEMResult:
         """
         out_path = Path(out_dir)
         out_path.mkdir(parents=True, exist_ok=True)
-        genetable_path = out_path / "genetable.txt"
-        profiletable_path = out_path / "profiletable.txt"
+
+        # Prefix resolution: explicit > path-stem > error.
+        if prefix is None:
+            data_file = self.input.get("data_file")
+            if data_file is None:
+                raise ValueError(
+                    "write_java_tables: prefix is required when the "
+                    "input was a DataFrame (no data_file path to "
+                    "derive a stem from). Pass prefix= explicitly."
+                )
+            prefix = Path(str(data_file)).stem
+
+        genetable_path = out_path / f"{prefix}_genetable.txt"
+        profiletable_path = out_path / f"{prefix}_profiletable.txt"
         self._write_genetable(genetable_path, encoding, newline)
         self._write_profiletable(profiletable_path, encoding, newline)
         return [str(genetable_path), str(profiletable_path)]

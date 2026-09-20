@@ -103,11 +103,11 @@ def _number_format(value: float, fraction_digits: int) -> str:
         source = float(value)            # binary path
     else:
         # E-notation path: parse the same string Java's NumberFormat would
-        # see (``"1.0E30"``-style). Python's ``repr(float)`` for |d|>=1e16
-        # yields ``1e+30`` (no decimal) which Decimal parses correctly as
-        # ``1e30`` -- and JRE8 NumberFormat quantizes that exact source
-        # to ``1,000,...000.00`` rather than the binary-rounded value.
-        source = repr(value)
+        # see (``"1.0E30"``-style).  Coerce to Python ``float`` first so
+        # ``repr`` gives ``"1e+30"`` -- numpy.float64's __repr__ includes
+        # the type prefix (``"np.float64(1e+30)"``) which ``Decimal``
+        # rejects with ConversionSyntax.
+        source = repr(float(value))
     with localcontext() as ctx:
         ctx.prec = 1000
         quantized = Decimal(source).quantize(
