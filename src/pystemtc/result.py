@@ -44,35 +44,45 @@ CONFIG_ALGORITHM_KEYS: tuple[str, ...] = (
 
 
 def _encode_value(value: float, present: bool) -> tuple[str, float | None]:
-    """Classify one stored double for schema v2 (spec 03 §1.10 truth table).
+    """Classify one stored double for schema v2 (spec 03 §1.10).
 
-    Priority is pinned: the stored double is classified FIRST, ``present``
-    (the pma mask) only splits the finite branch.
+    The two returned dimensions are ORTHOGONAL — neither implies the other:
 
-    ==========  ===================  ================================
-    stored      state                values entry
-    ==========  ===================  ================================
-    NaN         "nan"                None
-    +Inf        "positive_infinity"  None
-    -Inf        "negative_infinity"  None
-    finite      present == False     "missing" — fill payload retained
-    finite      present == True      "finite" — original value
-    ==========  ===================  ================================
+    - ``present`` is the Java pma mask and answers "did Java mark this cell
+      as present?".  It is the unique authority for present-ness and is
+      reported unchanged in the schema (``GeneAssignment.present``).
+    - ``value_states`` answers "what is the CATEGORY of the stored double?":
+      ``"nan" | "positive_infinity" | "negative_infinity" | "missing"
+      | "finite"``.  This dimension depends ONLY on the stored double plus,
+      for the finite branch, ``present``.  Non-finite payloads report their
+      non-finite state regardless of ``present``.
 
-    Invariants: ``values[i] is None`` iff ``value_states[i]`` is one of
-    nan/positive_infinity/negative_infinity; ``state == "missing"`` implies
-    ``present is False``; ``present is True`` implies ``state == "finite"``.
-    Note the asymmetry: a non-finite payload stored in an all-missing cell
-    (present=False — e.g. the log-mode ``log(0) = -Inf`` route, c14) reports
-    the non-finite state, not "missing", because the state classifies the
-    stored double while ``present`` mirrors the pma mask.
+    Therefore the correct contract (round-7 expert ruling, 2026-09-20) is:
 
-    This is the writer-lossless snapshot semantics of the Java matrix (the
-    Java gene-matrix content = merged medians + the primary row's fill
-    payload in all-missing cells, DataSetCore.java:707-712): from
-    (value, state, present) every Java genetable cell — including the
-    ``""``-vs-formatted distinction, ``-0.00`` and the ∞/U+FFFD renders — can
-    be reconstructed exactly by the M4 writer.
+    =====  ============  ================================
+    value  present       state               values
+    =====  ============  ================================
+    NaN    True/False    "nan"               None
+    +Inf   True/False    "positive_infinity" None
+    -Inf   True/False    "negative_infinity" None
+    finite True          "finite"            original value
+    finite False         "missing"           fill payload retained
+    =====  ============  ================================
+
+    Consequences: ``state == "finite"`` IFF ``value`` finite AND
+    ``present == True``; ``state == "missing"`` IFF ``value`` finite AND
+    ``present == False``.  NaN/+Inf/-Inf states DO NOT imply ``present``:
+    c14 row ``present=False, value=-Inf`` reports ``"negative_infinity"``;
+    a present-mask cell that happens to store ``-Inf`` would also report
+    ``"negative_infinity"``.  Do not collapse ``value_states`` to a
+    missness-only field — that would lose the Java-stored payload (the M4
+    writer needs both axes to reproduce the genetable byte-exact).
+
+    Lossless snapshot of the Java matrix (DataSetCore.java:707-712: the
+    merged medians + primary row's fill payload in all-missing cells; the
+    M4 writer reconstructs every genetable cell — ``""`` vs formatted,
+    ``-0.00`` and the ∞/U+FFFD renders — from
+    ``(value, value_state, present)``).
     """
     if math.isnan(value):
         return "nan", None

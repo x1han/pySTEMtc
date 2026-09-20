@@ -114,6 +114,40 @@ def test_gene_assignments_shape_and_c14_negative_infinity():
 # 3 --- _encode_value truth table ---------------------------------------------
 
 
+@pytest.mark.parametrize(
+    ("value", "present", "expected_state", "expected_value"),
+    [
+        # 10-cell sweep — round-7 orthogonality contract (spec 03 §1.10):
+        # non-finite states are INDEPENDENT of present; finite states split on
+        # present.  Never collapse value_states into a missness-only field.
+        (math.nan, True, "nan", None),
+        (math.nan, False, "nan", None),
+        (math.inf, True, "positive_infinity", None),
+        (math.inf, False, "positive_infinity", None),
+        (-math.inf, True, "negative_infinity", None),
+        (-math.inf, False, "negative_infinity", None),
+        (0.0, True, "finite", 0.0),
+        (-0.5, True, "finite", -0.5),
+        (0.948, False, "missing", 0.948),  # c13 phantom-fill payload
+        (-math.inf, False, "negative_infinity", None),  # c14 present=False, -Inf payload
+    ],
+)
+def test_encode_value_orthogonality_grid(
+    value, present, expected_state, expected_value
+):
+    """Round-7 contract: value_states ⊥ present for non-finite payloads.
+
+    The 10 (value, present) pairs pin the truth table.  Critically:
+    `(-inf, False)` reports `"negative_infinity"` (NOT `"missing"`), and
+    `(+inf, True)` reports `"positive_infinity"` (NOT `"finite"`) — both
+    cases would be wrong under the pre-round-7 direction-invariance
+    formulation `present=True ⇒ state=="finite"`.
+    """
+    state, out = _encode_value(value, present)
+    assert state == expected_state
+    assert out == expected_value
+
+
 def test_encode_value_truth_table_and_length_invariant():
     # non-finite states win over present, whatever the pma mask says
     assert _encode_value(math.nan, True) == ("nan", None)
