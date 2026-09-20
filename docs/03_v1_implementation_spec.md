@@ -283,7 +283,7 @@ cluster_profiles(sig, models, thr, percentile_thr) -> clusters   # 贪心球：�
 
 > "Compatibility-first implementation. The V1.0 core intentionally favors behavioral fidelity over vectorized performance." + 实测数字（`tools/bench.py` 三档：300×6T 0.3s / 3000×10T 29.3s / 10000×10T 53.5s wall；peak RSS ~870 MiB）。**870 MiB 不得称轻量**。
 
-**资源预算提示（round-7 专家原话插入）**：在当前 Windows benchmark 中，10,000 spots × 10 time points、Java 默认兼容参数下观察到约 873 MiB peak RSS。资源受限环境应在正式分析前用代表性输入做 benchmark。**为降低资源使用而修改 STEM 算法参数可能改变 model profiles 及最终结果，因此兼容模式下不建议仅以性能为目的修改这些参数**（不许写"内存不足时把 T 调小/调 candidate_cap 调子集"之类的指引——T/max_unit_change/candidate_cap/nike 都属算法参数，调整即破坏 Java 兼容性）。
+**资源预算提示（round-7 专家原话插入）**：在当前 Windows benchmark 中，10,000 spots × 10 time points、Java 默认兼容参数下观察到约 873 MiB peak RSS。资源受限环境应在正式分析前用代表性输入做 benchmark。**为降低资源使用而修改 STEM 算法参数可能改变 model profiles 及最终结果，因此兼容模式下不建议仅以性能为目的修改这些参数**（不许写"内存不足时把 T 调小/调 candidate_cap 调子集"之类的指引——T/max_unit_change/candidate_cap/n_permutations 都属算法参数，调整即破坏 Java 兼容性）。
 
 ### format_java_double 晋升
 

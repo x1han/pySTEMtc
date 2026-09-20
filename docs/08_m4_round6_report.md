@@ -2,13 +2,13 @@
 （品牌注记，2026-09-19：品牌铁律第 6 轮定案——py 小写、STEM 大写、tc 小写，写作 pySTEMTC；PyPI/import/CLI = `pystemtc` 全小写不变。历史文档 docs/01/02/04-07 中的 PySTEMTC 为当时记录，按 D12 不做追溯改写、以顶部 dated 注记为准。）
 
 - 日期：2026-09-20
-- 范围：第 6 轮裁决的完整执行——(a) P1 阻塞修复（STEMResult 丢失 Java genetable 末列载荷）；(b) to_dict schema v2 + stage timing；(c) 打包/CI/依赖下界/文案（M4/M6/M8）；(d) 品牌铁律清扫；(e) `benchmarks/benchmark_core.py` 按专家原案建成并跑完核心组。门禁全流程：planner → pre-work review（GO-with-changes，2 P1 / 5 P2 / 8 P3 全部吸收）→ 实现（先红后绿）→ **verifier 独立复核 10/10 PASS** → **post-work review APPROVE** → 4 项发现全部处置 → 136/136。**第 7 轮修订注记（2026-09-20）**：专家团裁定 schema v2 的 `present=True ⇒ state=="finite"` 方向不变量**写错**（实现与测试一直证明 `present` 与 `value_states` 正交）；同时 B6 因果归因**不成立**（B5→B6 同时发生 on_the_fly permutation 与 candidate-profile sampling 两个路径切换，profile_generation=20.6s 属候选采样，872.5 MiB 无阶段级内存测量无法归因）。两处已在 §1/§2.3/§2.4 钉正：spec 03 §1.10 改为正交合同（10 格真值表 + 参数化测试钉死）；本报告 §1 段与 §2.4 解读重写；新增 B9 = 10k×9T 隔离 bench（专家点名的路径拆分诊断点）。**139/139 测试通过**（136 + 3 正交矩阵）。
+- 范围：第 6 轮裁决的完整执行——(a) P1 阻塞修复（STEMResult 丢失 Java genetable 末列载荷）；(b) to_dict schema v2 + stage timing；(c) 打包/CI/依赖下界/文案（M4/M6/M8）；(d) 品牌铁律清扫；(e) `benchmarks/benchmark_core.py` 按专家原案建成并跑完核心组。门禁全流程：planner → pre-work review（GO-with-changes，2 P1 / 5 P2 / 8 P3 全部吸收）→ 实现（先红后绿）→ **verifier 独立复核 10/10 PASS** → **post-work review APPROVE** → 4 项发现全部处置 → 136/136。**第 7 轮修订注记（2026-09-20）**：专家团裁定 schema v2 的 `present=True ⇒ state=="finite"` 方向不变量**写错**（实现与测试一直证明 `present` 与 `value_states` 正交）；同时 B6 因果归因**不成立**（B5→B6 同时发生 on_the_fly permutation 与 candidate-profile sampling 两个路径切换，profile_generation=20.6s 属候选采样，872.5 MiB 无阶段级内存测量无法归因）。两处已在 §1/§2.3/§2.4 钉正：spec 03 §1.10 改为正交合同（10 格真值表 + 参数化测试钉死）；本报告 §1 段与 §2.4 解读重写；新增 B9 = 10k×9T 隔离 bench（专家点名的路径拆分诊断点）。**146/146 测试通过**（136 + 10-cell 正交矩阵）。
 
 ---
 
 ## 1. 一段话总结
 
-第 6 轮裁决全部执行完毕。P1 阻塞修复：STEMResult 丢失 Java genetable 末列载荷的根因，是 Python 侧对**无重复数据集**也无条件执行了零初始化的 cellwise 中位数合并，而 Java 在无 repeat 时**从不调用 mergeDataSets**（different_periods 直接 `theDataSetsMerged = theDataSet1`，ST.java:2577；same_period 是纯引用别名包装，ST.java:2669）——修复为直通分支（`if not repeats: return main`），先红后绿，新增的 14 配置全字段值列金标测试证明 A 层零反噬。to_dict schema v2（11 顶层键、`profile_ids: list[int]`、value_states 真值表 + **正交合同**修订、config/input 分离、timestamp 单次生成）与 8 键 stage timing 落地。`benchmarks/benchmark_core.py` 按专家原案建成（B1-B9 专家网格 + n_permutations 扫描组 + 重复组），核心组实测：**wall 0.66 s（1k×5T）→ 51.0 s（10k×10T），peak RSS 76.2 → 872.5 MiB**；置换阶段在 B1–B5 占 85–95%，**B6 是 T=10 默认配置下的高资源形态，同时发生 on_the_fly permutation 和 candidate-profile sampling 两个路径切换**（T=10 时 `5^9 = 1,953,125` 越过 candidate_cap=1,000,000 进入采样路径），当前 benchmark 没有阶段级内存测量，**无法单独把 872.5 MiB peak RSS 归给 on_the_fly**；B6 的 872.5 MiB 与 M3 冻结证据的 ~870 MiB 互相印证。**资源预算提示**（第 7 轮专家原话）只写事实与测量建议，不建议为了省内存修改 STEM 算法参数——`time points` / `max_unit_change` / `candidate_cap` / `n_permutations` 都属算法参数，调整即破坏 Java 兼容性。单机 benchmark 未给出 V1.0 必须先优化的理由。**139/139 测试通过**（136 + 3 第 7 轮正交矩阵）。
+第 6 轮裁决全部执行完毕。P1 阻塞修复：STEMResult 丢失 Java genetable 末列载荷的根因，是 Python 侧对**无重复数据集**也无条件执行了零初始化的 cellwise 中位数合并，而 Java 在无 repeat 时**从不调用 mergeDataSets**（different_periods 直接 `theDataSetsMerged = theDataSet1`，ST.java:2577；same_period 是纯引用别名包装，ST.java:2669）——修复为直通分支（`if not repeats: return main`），先红后绿，新增的 14 配置全字段值列金标测试证明 A 层零反噬。to_dict schema v2（11 顶层键、`profile_ids: list[int]`、value_states 真值表 + **正交合同**修订、config/input 分离、timestamp 单次生成）与 8 键 stage timing 落地。`benchmarks/benchmark_core.py` 按专家原案建成（B1-B9 专家网格 + n_permutations 扫描组 + 重复组），核心组实测：**wall 0.66 s（1k×5T）→ 51.0 s（10k×10T），peak RSS 76.2 → 872.5 MiB**；置换阶段在 B1–B5 占 85–95%，**B6 是 T=10 默认配置下的高资源形态，同时发生 on_the_fly permutation 和 candidate-profile sampling 两个路径切换**（T=10 时 `5^9 = 1,953,125` 越过 candidate_cap=1,000,000 进入采样路径），当前 benchmark 没有阶段级内存测量，**无法单独把 872.5 MiB peak RSS 归给 on_the_fly**；B6 的 872.5 MiB 与 M3 冻结证据的 ~870 MiB 互相印证。**资源预算提示**（第 7 轮专家原话）只写事实与测量建议，不建议为了省内存修改 STEM 算法参数——`time points` / `max_unit_change` / `candidate_cap` / `n_permutations` 都属算法参数，调整即破坏 Java 兼容性。单机 benchmark 未给出 V1.0 必须先优化的理由。**146/146 测试通过**（136 + 10-cell 正交矩阵）。
 
 ## 2. 结果总结
 
@@ -39,7 +39,7 @@
 | 修改项 | 落地 |
 |----|------|
 | `profile_ids: list[int]` | 替代原 `profile: str`；S_0003 → `[7]` 有测试 |
-| value_states 真值表 + **正交合同（round-7 修订）** | `present` 与 `value_states` 两个维度**正交**：`present` 是 Java pma 唯一权威位，由 `GeneAssignment.present` 字段独立报出；`value_states` 只回答"存储 double 的 payload 类别"，**非有限 payload 与 present 无关**——NaN/+Inf/−Inf 在 `present=True/False` 下都报对应非有限态且 values=null；finite+True=present → `"finite"`；finite+False=present → `"missing"`（填充载荷保留）。**禁止**写成 `present=True ⇒ state=="finite"`（实证：`_encode_value(math.inf, True) == ("positive_infinity", None)`、`_encode_value(-math.inf, True) == ("negative_infinity", None)`；c14 行 `present=False ∧ −Inf` 报 `"negative_infinity"`）。`value_states` 字段名保留（round-7 专家否决改名"missingness_state"），含义"value 的状态"，与 present 各司其职。10 格真值表 `tests/test_result_schema.py` 参数化钉死。 |
+| value_states 真值表 + **正交合同（round-7 修订）** | `present` 与 `value_states` 两个维度**正交**：`present` 是 Java pma 唯一权威位，由 `GeneAssignment.present` 字段独立报出；`value_states` 只回答"存储 double 的 payload 类别"，**非有限 payload 与 present 无关**——NaN/+Inf/−Inf 在 `present=True/False` 下都报对应非有限态且 values=null；finite+present=True → `"finite"`；finite+present=False → `"missing"`（填充载荷保留）。**禁止**写成 `present=True ⇒ state=="finite"`（实证：`_encode_value(math.inf, True) == ("positive_infinity", None)`、`_encode_value(-math.inf, True) == ("negative_infinity", None)`；c14 行 `present=False ∧ −Inf` 报 `"negative_infinity"`）。`value_states` 字段名保留（round-7 专家否决改名"missingness_state"），含义"value 的状态"，与 present 各司其职。10 格真值表 `tests/test_result_schema.py` 参数化钉死。 |
 | config/input 分离 | config = 18 个显式算法键（枚举自 STEMConfig，JSON 可序列化，不做"hashable"宣称）；input = data_file / repeat_files / time_points / input_form |
 | timestamp 单次 | `engine.fit` 内生成一次存 metadata，`to_dict` 只拷贝；两次调用全等有测试 |
 
@@ -109,10 +109,10 @@
 ## 3. 可以得出的结论
 
 1. **兼容性合同未被本轮破坏**：14/14 金标（c01–c14）在 P1 修复后全字段值列逐格全过——本轮的 A 层承诺从"表结构/打印值一致"升级为"值列逐格一致"，c14 的 −∞ 载荷自 Java 侧到 Python 数据结构全程可达。
-2. **schema v2 是对既有 `to_dict` 的 pre-release 重定义**（第 6 轮裁决定性），已按四项修改 + timestamp 单次落地并有 11 个测试钉住；strict JSON 实测通过。
-3. **单机 benchmark 未给出 V1.0 必须先优化的理由**（措辞遵 M8 修正注记）：1k→30k 基因 wall 0.66→39 s，10k×10T 51 s；内存上界由 B6 的 872.5 MiB 界定，发布文案按"未优化 + 事实性 870 MiB"模板执行。
-4. **性能画像可用于优化轮的地基**：置换阶段主导（B1–B5 占 85–95%）、B6 的 on_the_fly 路径是内存/时间双热点——但任何优化都必须走 golden → optimize → golden（D15），本轮不动。
-5. **流程收敛**：verifier 10/10 + post-review 无 P1，四项发现当日全部处置；136/136 绿。
+2. **schema v2 是对既有 `to_dict` 的 pre-release 重定义**（第 6 轮裁决定性），按正交合同（round-7 修订：`present` 与 `value_states` 正交，非有限 payload 不论 present 都报对应非有限态）落地；strict JSON 实测通过，21 个 schema 测试钉死（含 10 格参数化正交矩阵）。
+3. **单机 benchmark 未给出 V1.0 必须先优化的理由**（措辞遵 M8 修正注记）：1k→30k 基因 wall 0.66→39 s，10k×10T 51 s；内存上界由 B6 的 873 MiB 界定，发布文案按"未优化 + 事实性 870 MiB"模板执行；为兼容 Java 行为，不建议为降低资源使用而修改 STEM 算法参数。
+4. **性能画像可用于优化轮的地基**：置换阶段主导（B1–B5 占 85–95%）。**B6 的 873 MiB peak RSS 主项是 sample-1M candidate-profile 采样**（B9→B6 增量 +589 MiB），**on_the_fly permutation 自身仅贡献 ~165 MiB**（B5→B9 增量，B9 = 10k×9T 是路径隔离点）。profile_generation=20.6 s 在 B6 全部归候选采样，置换 on_the_fly 不直接造成 B6 的"双热点"（round-7 专家修正了 round-6 的因果归因）。任何优化都必须走 golden → optimize → golden（D15），本轮不动。
+5. **流程收敛**：round-6 verifier 10/10 + post-review 无 P1，4 项发现当日处置；round-7 expert 复核发现 2 P1（schema 方向不变量写错 + B6 因果归因），已修；**146/146 绿**。
 
 ## 4. 遗留问题清单（请专家团给意见）
 
