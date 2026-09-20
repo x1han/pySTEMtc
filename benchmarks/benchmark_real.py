@@ -1,25 +1,53 @@
-"""Real-data benchmark harness for pySTEMTC (round-7.4, 2026-09-20).
+"""Real-data benchmark harness for pySTEMTC (round-7.5, 2026-09-20).
 
 This harness is the **ecological-validity counterpart** to ``benchmark_core.py``
 (synthetic scaling grid). It runs **Java STEM v1.3.14 + PySTEMTC side-by-side
 on user-provided real time-course data** and reports:
 
-1. **Result consistency first** (Compatibility A exact, Compatibility C1 exact)
-   -- this is the first-column judgment per expert ruling 2026-09-20, NOT
-   Py/Java ratio.
-2. **Performance** (end-to-end wall, peak RSS, PySTEMTC stage timing).
+1. **Result consistency first** (``assignment_exact`` while writer is pending;
+   ``C1 exact = NOT YET ASSESSED`` until writer implementation round) --
+   the first-column judgment per expert ruling 2026-09-20, NOT Py/Java ratio.
+2. **Performance** (end-to-end wall + peak RSS for both languages, plus
+   PySTEMTC core_wall + stage timing).
 3. **Dataset profile** (input / dedup / repeat / missing / threshold /
-   retained-gene counts) so two datasets with the same raw row count are
-   not interpreted as equivalent.
+   retained-gene counts; sha256 provenance) so two datasets with the same
+   raw row count are not interpreted as equivalent.
 
-The two harnesses never import each other; real and synthetic results are
-kept apart on disk. This script never reads ``tests/golden/`` (it does its
-own Compatibility A comparison by reading Java's genetable profile column).
+Round-7.5 P1 fixes from expert review 2026-09-20:
 
-Highest-rule (round-7.4 expert ruling):
+- **P1-1 (fair measurement)**: Python side now runs in **fresh subprocess
+  per run** (not in-process). The parent times ``end_to_end_wall`` around
+  ``subprocess.run`` (cross-language-comparable); the worker writes a
+  ``core_wall`` (Py-internal optimization analysis). The Py worker protocol
+  is reused from ``benchmark_core.py:225`` (``--worker`` JSON stdout).
+  Java already used fresh JVM per run; child peak RSS via Psapi.
+- **P1-2 (assignment_exact, NOT set-comparison)**: profile_ids compared as
+  **ordered list** to preserve tie-assignment order; C1 column reported
+  as ``NOT YET ASSESSED`` until writer implementation round.
+- **P1-3 (no hardcoded Java config)**: every Java defaults field is now
+  driven by ``manifest.config``; replicates + repeat_mode are wired through
+  to both Python (``engine.fit(data, replicates=...)``) and Java
+  (``Repeat_Data_Files`` / ``Repeat_Data_is_from``).
+- **P1-4 (R1 developmental order)**: R1 v2 main.txt regenerated with
+  ``8W_Brain`` (adult, 8 weeks) at the END of the developmental trajectory,
+  sha256 ``ef8e6ae3915c50bcef518d737b915e9e36d83bb2bb02c59cf643b27a105a45ac``.
+
+Round-7.5 解冻区:
+- dataset profile adds ``input_rows``, ``unique_gene_names``,
+  ``duplicate_gene_rows``, ``raw_missing_rate``, ``zero_rate``,
+  ``nonpositive_rate``, ``input_sha256``, ``derivation_sha256``,
+  ``derivation_description``.
+- Java binary / stem.jar via CLI ``--java-bin`` / ``--stem-jar`` with
+  env-var fallback then auto-discovery (NOT in manifest -- manifest is
+  portable across machines).
+- PyYAML is a required dependency; the round-7.4 hand-rolled fallback is
+  removed (it could not fully parse the locked schema).
+
+Highest-rule (round-7.5 expert ruling):
 - never modify the real dataset to make it easier to benchmark;
 - never change algorithm parameters between Java and Python;
-- never pre-pick n_permutations / candidate_cap to make the run "prettier".
+- never pre-pick n_permutations / candidate_cap to make the run "prettier";
+- **Java stage timing is intentionally blank** -- we don't fake one.
 
 Usage:
     python benchmarks/benchmark_real.py --manifest D:/stem/benchmark_data/R1/manifest.yaml
@@ -68,81 +96,20 @@ RESULTS = Path(__file__).parent / "results" / "real"
 
 
 # --------------------------------------------------------------------------
-# YAML manifest (minimal hand-rolled parser; PyYAML is an optional dep)
+# YAML manifest (PyYAML is a required dependency, no fallback)
 # --------------------------------------------------------------------------
 
 def _load_manifest(path: Path) -> dict:
-    """Tiny YAML reader for the locked manifest schema (§1.12)."""
-    try:
-        import yaml  # type: ignore
-        with open(path, encoding="utf-8") as fh:
-            return yaml.safe_load(fh)
-    except ImportError:
-        pass
-    # Minimal fallback: supports the schema exactly.
-    out: dict = {}
-    section = None
-    list_key: str | None = None
-    list_val: list[str] = []
-    scalar_pairs: list[tuple[str, str]] = []
+    """Read the locked manifest schema (§1.12). PyYAML is required.
+
+    Raises:
+        ImportError if PyYAML is not installed (round-7.5 ruling: the
+            hand-rolled fallback in round-7.4 was broken -- it could not
+            fully parse the schema; we no longer pretend otherwise).
+    """
+    import yaml
     with open(path, encoding="utf-8") as fh:
-        for raw in fh:
-            line = raw.rstrip("\n").rstrip("\r")
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            indent = len(line) - len(line.lstrip())
-            if indent == 0 and stripped.endswith(":"):
-                section = stripped[:-1]
-                if list_key is not None:
-                    out[list_key] = list_val
-                    list_key = None
-                list_val = []
-                out[section] = {}
-                continue
-            if indent == 2 and ":" in stripped:
-                if list_key is not None:
-                    out[list_key] = list_val
-                key, _, value = stripped.partition(":")
-                value = value.strip()
-                if value == "":
-                    # could be either a dict section or a list start
-                    list_key = f"{section}.{key}"
-                    list_val = []
-                else:
-                    out[f"{section}.{key}"] = _coerce(value)
-                    list_key = None
-                continue
-            if indent >= 4 and stripped.startswith("- ") and list_key:
-                list_val.append(stripped[2:].strip())
-        if list_key is not None:
-            out[list_key] = list_val
-
-    # Re-shape: nested config + description dicts
-    cfg: dict = {}
-    desc: dict = {}
-    top = {}
-    for k, v in out.items():
-        if "." not in k and k not in ("config", "description"):
-            top[k] = v
-        elif k.startswith("config."):
-            cfg[k[len("config."):]] = v
-        elif k.startswith("description."):
-            desc[k[len("description."):]] = v
-    top["config"] = cfg
-    top["description"] = desc
-    return top
-
-
-def _coerce(value: str) -> Any:
-    if value.lower() in ("true", "false"):
-        return value.lower() == "true"
-    if value.lstrip("-").isdigit():
-        return int(value)
-    try:
-        return float(value)
-    except ValueError:
-        return value
+        return yaml.safe_load(fh)
 
 
 # --------------------------------------------------------------------------
@@ -152,13 +119,15 @@ def _coerce(value: str) -> Any:
 def _profile_dataset(manifest: dict, dataset_id: str) -> dict:
     """Read the main file once and compute the dataset profile.
 
-    Counts reported (per expert ruling 2026-09-20):
-        spots, time_points, repeat_files, missing_rate,
-        zero_rate, value_min, value_max, value_median,
-        genes_after_dedup, genes_after_repeat_filter,
-        genes_after_missing_filter, genes_after_threshold_filter,
-        final_retained_genes
+    Round-7.5 expanded schema (per expert ruling 2026-09-20):
+        input_rows, unique_gene_names, duplicate_gene_rows,
+        T, reps,
+        raw_missing_rate, zero_rate, nonpositive_rate,   # nonpositive = effective missing under log mode
+        value_min, value_max, value_median,
+        input_sha256, derivation_sha256, derivation_description,
+        + engine-side post-filter counts (filled after first run)
     """
+    import hashlib
     main_path = Path(manifest["main"])
     if not main_path.exists():
         raise FileNotFoundError(f"manifest.main not found: {main_path}")
@@ -170,42 +139,59 @@ def _profile_dataset(manifest: dict, dataset_id: str) -> dict:
             rows.append(row)
     header = rows[0]
     body = rows[1:]
-    # If first column is gene_name only (no SPOT), time_points = len(header) - 1.
     n_cols = len(header) - 1
-    # spot_included: when True header is [SPOT, GENE, t1, t2, ...] -> time_cols = len - 2
     if manifest["config"].get("spot_included", True):
         time_cols = n_cols - 1
     else:
         time_cols = n_cols
-    spots = len(body)
-    missing = 0
+    # Use the FIRST data column as the gene identifier (independent of
+    # spot_included: when spot_included=True, the first column IS the gene
+    # name; when False, the only ID column is the gene name). The spec is
+    # captured by spot_included; the ID column is always body[i][0].
+    gene_names = [r[0] for r in body]
+    input_rows = len(body)
+    unique_gene_names = len(set(gene_names))
+    duplicate_gene_rows = input_rows - unique_gene_names
+
+    raw_missing = 0
     zeros = 0
+    nonpositive = 0
     values: list[float] = []
     for r in body:
         for cell in r[-time_cols:]:
             if cell == "" or cell.lower() in ("na", "nan", "null"):
-                missing += 1
+                raw_missing += 1
                 continue
             try:
                 v = float(cell)
             except ValueError:
-                missing += 1
+                raw_missing += 1
                 continue
             values.append(v)
             if v == 0.0:
                 zeros += 1
-    total_cells = spots * time_cols
+            if v <= 0.0:
+                nonpositive += 1
+    total_cells = input_rows * time_cols
+    main_sha = hashlib.sha256(main_path.read_bytes()).hexdigest()
+    desc = manifest.get("description") or {}
     return {
         "dataset_id": dataset_id,
-        "spots": spots,
-        "time_points": time_cols,
-        "repeat_files": len(manifest.get("replicates") or []),
-        "missing_rate": round(missing / total_cells, 6) if total_cells else 0.0,
+        "input_rows": input_rows,
+        "unique_gene_names": unique_gene_names,
+        "duplicate_gene_rows": duplicate_gene_rows,
+        "T": time_cols,
+        "reps": len(manifest.get("replicates") or []),
+        "raw_missing_rate": round(raw_missing / total_cells, 6) if total_cells else 0.0,
         "zero_rate": round(zeros / total_cells, 6) if total_cells else 0.0,
+        "nonpositive_rate": round(nonpositive / total_cells, 6) if total_cells else 0.0,
         "value_min": round(min(values), 4) if values else 0.0,
         "value_max": round(max(values), 4) if values else 0.0,
         "value_median": round(statistics.median(values), 4) if values else 0.0,
-        # Run-engine-side profile numbers (filled in after first run):
+        "input_sha256": desc.get("input_sha256", ""),
+        "derivation_sha256": main_sha,
+        "derivation_description": desc.get("preprocessing", ""),
+        # Engine-side post-filter counts (filled in after first run):
         "genes_after_dedup": "",
         "genes_after_repeat_filter": "",
         "genes_after_missing_filter": "",
@@ -215,17 +201,27 @@ def _profile_dataset(manifest: dict, dataset_id: str) -> dict:
 
 
 # --------------------------------------------------------------------------
-# subprocess: PySTEMTC worker (mirrors benchmark_core.py worker protocol)
+# subprocess: PySTEMTC worker (reuses benchmark_core.py's --worker protocol)
 # --------------------------------------------------------------------------
+# Protocol shape (mirrors benchmark_core.py:225-267):
+#   --worker mode:
+#     - parses --manifest and --language=python from argv
+#     - imports pystemtc.engine (fresh subprocess per run)
+#     - engine.fit(data, replicates=...)
+#     - emits single-line JSON to stdout: {dataset_id, language, exit_code,
+#       core_wall_s, peak_rss_bytes, stages{}, summary{}, gene_assignments{}}
+#   parent mode:
+#     - subprocess.run([..., "--worker", ...])
+#     - times end_to_end_wall_s around the call (cross-language-comparable)
+#     - reads JSON payload from worker stdout (core_wall + stage timing + assignments)
 
-def _python_worker_payload(manifest: dict, dataset_id: str) -> dict:
-    """Run PySTEMTC in the *current* process (Py subprocess has no way to
-    expose stage timings; we still do an inline run here so peak RSS is
-    process-monotonic). Caller may discard this on warm-up."""
+def _python_worker_main(manifest: dict, dataset_id: str) -> dict:
+    """In-worker payload builder. Called inside the fresh subprocess."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from src.pystemtc.engine import STEM
 
     cfg = manifest["config"]
+    replicates = manifest.get("replicates") or []
     t0 = time.perf_counter()
     engine = STEM(
         normalize=cfg["normalize"],
@@ -242,14 +238,18 @@ def _python_worker_payload(manifest: dict, dataset_id: str) -> dict:
         max_missing=cfg["max_missing"],
         min_abs_expr=cfg["min_abs_expr"],
         repeat_mode=cfg.get("repeat_mode", "different_periods"),
+        repeat_min_correlation=cfg.get("repeat_min_correlation", 0.0),
+        cluster_min_correlation=cfg.get("cluster_min_correlation", 0.7),
+        cluster_corr_percentile=cfg.get("cluster_corr_percentile", 0.0),
+        change_rule=cfg.get("change_rule", "max_minus_min"),
     )
-    res = engine.fit(manifest["main"])
-    wall = time.perf_counter() - t0
+    res = engine.fit(manifest["main"], replicates=replicates if replicates else None)
+    core_wall = time.perf_counter() - t0
     payload = {
         "dataset_id": dataset_id,
         "language": "python",
         "exit_code": 0,
-        "wall_s": wall,
+        "core_wall_s": core_wall,
         "peak_rss_bytes": _peak_rss_bytes(),
         "stages": {key: res.timing.get(key, 0.0) for key in STAGE_KEYS},
         "summary": {
@@ -258,25 +258,80 @@ def _python_worker_payload(manifest: dict, dataset_id: str) -> dict:
             "profiles": len(res.profiles),
             "permutation_mode": res.metadata.get("permutation_mode", ""),
         },
+        # Round-7.5 P1-2: ordered list (NOT set) so tie-assignment order is
+        # preserved when comparing against Java.
         "gene_assignments": {ga.gene: list(ga.profile_ids) for ga in res.gene_assignments},
     }
     return payload
+
+
+def _spawn_python_worker(manifest_path: Path, dataset_id: str) -> tuple[dict, float]:
+    """Spawn a fresh Python subprocess; time ``end_to_end_wall`` around the
+    call; return (worker_payload, end_to_end_wall_s).
+
+    Mirrors benchmark_core.py's _spawn_worker pattern (line 275).
+    """
+    cmd = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "--worker",
+        "--manifest", str(manifest_path),
+        "--language", "python",
+    ]
+    t0 = time.perf_counter()
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    end_to_end_wall = time.perf_counter() - t0
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"python worker failed rc={proc.returncode}\n"
+            f"stdout: {proc.stdout[-1000:]}\nstderr: {proc.stderr[-1000:]}"
+        )
+    lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
+    if not lines:
+        raise RuntimeError("python worker produced no JSON line")
+    payload = json.loads(lines[-1])
+    payload["end_to_end_wall_s"] = end_to_end_wall
+    return payload, end_to_end_wall
 
 
 # --------------------------------------------------------------------------
 # subprocess: Java STEM v1.3.14 (batch mode, GBK oracle)
 # --------------------------------------------------------------------------
 
-def _java_run(manifest: dict, dataset_id: str, out_dir: Path) -> dict:
+def _resolve_java_paths(args: argparse.Namespace) -> tuple[str, str, str, str]:
+    """Resolve Java binary and stem.jar path. Round-7.5 ruling:
+    CLI > environment variable > auto-discovery > hardcoded fallback.
+    Returns (java_bin, java_version_str, stem_jar_path, stem_jar_sha256).
+    """
+    import hashlib
+    java = (
+        args.java_bin
+        or os.environ.get("JAVA_BIN")
+        or shutil.which("java")
+        or r"C:\Program Files (x86)\Common Files\Oracle\Java\java8path\java.exe"
+    )
+    stem_jar = (
+        args.stem_jar
+        or os.environ.get("STEM_JAR")
+        or r"D:\stem\stem.jar"
+    )
+    java_version_str = _java_version(java)
+    try:
+        jar_sha = hashlib.sha256(Path(stem_jar).read_bytes()).hexdigest()
+    except Exception:
+        jar_sha = "unreadable"
+    return java, java_version_str, stem_jar, jar_sha
+
+
+def _java_run(manifest: dict, dataset_id: str, out_dir: Path,
+              java_bin: str, stem_jar: str) -> dict:
     """Invoke Java in batch mode (3 args). Writes the genetable/profiletable
-    into out_dir; returns dict with wall + peak RSS + assignments parsed
-    from the GBK-encoded genetable.
+    into out_dir; returns dict with end_to_end_wall + peak RSS + assignments
+    parsed from the GBK-encoded genetable.
 
     The harness *never* spawns Java in single-file mode without ``-o`` to
     avoid the GUI launch (ST.java dispatch on args.length==2).
     """
-    java = os.environ.get("JAVA_BIN") or shutil.which("java") or r"C:\Program Files (x86)\Common Files\Oracle\Java\java8path\java.exe"
-    stem_jar = os.environ.get("STEM_JAR") or r"D:\stem\stem.jar"
     cfg_dir = out_dir / "_cfg"
     java_out_dir = out_dir / "_java_out"
     cfg_dir.mkdir(parents=True, exist_ok=True)
@@ -285,7 +340,7 @@ def _java_run(manifest: dict, dataset_id: str, out_dir: Path) -> dict:
     cfg_path.write_text(_render_stem_config(manifest, dataset_id), encoding="utf-8")
 
     cmd = [
-        java,
+        java_bin,
         "-cp", stem_jar,
         "edu.cmu.cs.sb.stem.ST",
         "-b", str(cfg_dir), str(java_out_dir),
@@ -294,11 +349,13 @@ def _java_run(manifest: dict, dataset_id: str, out_dir: Path) -> dict:
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     peak = _poll_peak_rss(proc)
     stdout_b, stderr_b = proc.communicate()
-    wall = time.perf_counter() - t0
+    end_to_end_wall = time.perf_counter() - t0
     exit_code = proc.returncode
     if exit_code != 0:
         raise RuntimeError(
-            f"Java batch failed rc={exit_code}\nstdout: {stdout_b.decode('gbk','replace')[:400]}\nstderr: {stderr_b.decode('gbk','replace')[:400]}"
+            f"Java batch failed rc={exit_code}\n"
+            f"stdout: {stdout_b.decode('gbk','replace')[:400]}\n"
+            f"stderr: {stderr_b.decode('gbk','replace')[:400]}"
         )
 
     java_genetable = java_out_dir / f"{dataset_id}_genetable.txt"
@@ -316,7 +373,8 @@ def _java_run(manifest: dict, dataset_id: str, out_dir: Path) -> dict:
         "dataset_id": dataset_id,
         "language": "java",
         "exit_code": exit_code,
-        "wall_s": wall,
+        "core_wall_s": "",  # Java has no internal stage timer; do not fake.
+        "end_to_end_wall_s": end_to_end_wall,
         "peak_rss_bytes": peak,
         "stages": {key: "" for key in STAGE_KEYS},
         "summary": {
@@ -328,12 +386,30 @@ def _java_run(manifest: dict, dataset_id: str, out_dir: Path) -> dict:
 
 
 def _render_stem_config(manifest: dict, dataset_id: str) -> str:
-    """Render a Java STEM defaults file (the format ST.java:parseDefaults reads)."""
+    """Render a Java STEM defaults file (the format ST.java:parseDefaults reads).
+
+    Round-7.5 P1-3: ALL algorithm parameters are driven by manifest.config;
+    no field is hardcoded except K-means-only values (Number_of_Clusters_K,
+    Number_of_Random_Starts) which only apply when clustering_method=kmeans.
+    """
     cfg = manifest["config"]
     main = manifest["main"].replace("/", "\\")
-    normalize_map = {"log": "Log normalize data", "normalize": "Normalize data", "none_add0": "No normalization/add 0"}
+    normalize_map = {"log": "Log normalize data", "normalize": "Normalize data",
+                     "none_add0": "No normalization/add 0"}
     spot_inc = "true" if cfg.get("spot_included", True) else "false"
-    correction_map = {"bonferroni": "Bonferroni", "fdr": "False Discovery Rate", "none": "None"}
+    correction_map = {"bonferroni": "Bonferroni", "fdr": "False Discovery Rate",
+                      "none": "None"}
+    repeat_mode_str = cfg.get("repeat_mode", "different_periods")
+    repeat_mode_java = "Different time periods" if repeat_mode_str == "different_periods" else "The same time period"
+    replicates = manifest.get("replicates") or []
+    replicate_files_str = ",".join(r.replace("/", "\\") for r in replicates) if replicates else ""
+
+    change_rule = cfg.get("change_rule", "max_minus_min")
+    change_rule_java = "Maximum-Minimum" if change_rule == "max_minus_min" else "Difference From 0"
+
+    clustering_method = cfg.get("clustering_method", "stem")
+    clustering_method_java = "STEM Clustering Method" if clustering_method == "stem" else "K-means"
+
     lines = [
         "#Main Input:",
         f"Data_File\t{main}",
@@ -343,17 +419,19 @@ def _render_stem_config(manifest: dict, dataset_id: str) -> str:
         "Cross_Reference_File\t",
         "Gene_Location_Source\tUser provided",
         "Gene_Location_File\t",
-        "Clustering_Method[STEM Clustering Method,K-means]\tSTEM Clustering Method",
+        f"Clustering_Method[STEM Clustering Method,K-means]\t{clustering_method_java}",
         f"Maximum_Number_of_Model_Profiles\t{cfg['max_model_profiles']}",
         f"Maximum_Unit_Change_in_Model_Profiles_between_Time_Points\t{cfg['max_unit_change']}",
-        "Number_of_Clusters_K\t10",
-        "Number_of_Random_Starts\t20",
+        # K-means-only defaults; ignored by STEM clustering method but Java
+        # still parses them. Defaults are surfaced in the manifest schema.
+        f"Number_of_Clusters_K\t{cfg.get('n_clusters', 10)}",
+        f"Number_of_Random_Starts\t{cfg.get('random_starts', 20)}",
         f"Normalize_Data[Log normalize data,Normalize data,No normalization/add 0]\t{normalize_map[cfg['normalize']]}",
         f"Spot_IDs_included_in_the_data_file\t{spot_inc}",
         "",
         "#Repeat data",
-        "Repeat_Data_Files(comma delimited list)\t",
-        "Repeat_Data_is_from[Different time periods,The same time period]\tDifferent time periods",
+        f"Repeat_Data_Files(comma delimited list)\t{replicate_files_str}",
+        f"Repeat_Data_is_from[Different time periods,The same time period]\t{repeat_mode_java}",
         "",
         "#Comparison Data:",
         "Comparison_Data_File\t",
@@ -364,22 +442,22 @@ def _render_stem_config(manifest: dict, dataset_id: str) -> str:
         "",
         "#Filtering:",
         f"Maximum_Number_of_Missing_Values\t{cfg['max_missing']}",
-        "Minimum_Correlation_between_Repeats\t0.0",
+        f"Minimum_Correlation_between_Repeats\t{cfg.get('repeat_min_correlation', 0.0)}",
         f"Minimum_Absolute_Log_Ratio_Expression\t{cfg['min_abs_expr']}",
-        "Change_should_be_based_on[Maximum-Minimum,Difference From 0]\tMaximum-Minimum",
+        f"Change_should_be_based_on[Maximum-Minimum,Difference From 0]\t{change_rule_java}",
         "Pre-filtered_Gene_File\t",
         "",
         "#Model Profiles",
-        "Maximum_Correlation\t1.0",
+        f"Maximum_Correlation\t{cfg['max_correlation']}",
         f"Number_of_Permutations_per_Gene\t{cfg['n_permutations']}",
         f"Maximum_Number_of_Candidate_Model_Profiles\t{cfg['candidate_cap']}",
-        "Significance_Level\t0.05",
+        f"Significance_Level\t{cfg.get('alpha', 0.05)}",
         f"Correction_Method[Bonferroni,False Discovery Rate,None]\t{correction_map[cfg['correction']]}",
         f"Permutation_Test_Should_Permute_Time_Point_0\t{'true' if cfg['permute_t0'] else 'false'}",
         "",
         "#Clustering Profiles:",
-        "Clustering_Minimum_Correlation\t0.7",
-        "Clustering_Minimum_Correlation_Percentile\t0.0",
+        f"Clustering_Minimum_Correlation\t{cfg.get('cluster_min_correlation', 0.7)}",
+        f"Clustering_Minimum_Correlation_Percentile\t{cfg.get('cluster_corr_percentile', 0.0)}",
         "",
         "#Gene Annotations:",
         "Category_ID_File\t",
@@ -535,10 +613,21 @@ def _poll_peak_rss(proc: subprocess.Popen) -> int:
 
 
 # --------------------------------------------------------------------------
-# Compatibility A comparison
+# Compatibility comparison: assignment_exact (ordered list, NOT set)
 # --------------------------------------------------------------------------
 
 def _compare_consistency(py: dict, java: dict) -> dict:
+    """Round-7.5 P1-2: compare ``profile_ids`` as **ordered list** (NOT
+    set) so tie-assignment order is preserved.
+
+    Returns a dict with:
+        n_common / n_java_only / n_py_only
+        n_mismatches
+        assignment_exact -- True iff every retained gene has the same
+            ordered list of profile_ids in both languages.
+        first_mismatches -- up to 5 (gene, java_profile_ids, py_profile_ids)
+            for inspection.
+    """
     py_a = py.get("gene_assignments", {})
     java_a = java.get("gene_assignments", {})
     common = set(py_a) & set(java_a)
@@ -546,14 +635,17 @@ def _compare_consistency(py: dict, java: dict) -> dict:
     py_only = set(py_a) - set(java_a)
     mismatches = []
     for g in common:
-        if set(py_a[g]) != set(java_a[g]):
-            mismatches.append((g, java_a[g], py_a[g]))
+        # Ordered list comparison -- preserves tie order.
+        if list(py_a[g]) != list(java_a[g]):
+            mismatches.append((g, list(java_a[g]), list(py_a[g])))
     return {
         "n_common": len(common),
         "n_java_only": len(java_only),
         "n_py_only": len(py_only),
         "n_mismatches": len(mismatches),
-        "a_exact": (len(java_only) == 0 and len(py_only) == 0 and len(mismatches) == 0),
+        "assignment_exact": (
+            len(java_only) == 0 and len(py_only) == 0 and len(mismatches) == 0
+        ),
         "first_mismatches": mismatches[:5],
     }
 
@@ -564,17 +656,21 @@ def _compare_consistency(py: dict, java: dict) -> dict:
 
 CSV_FIELDS = (
     ["dataset_id", "run", "kind", "language"]
-    + ["spots", "time_points", "repeat_files",
-       "missing_rate", "zero_rate", "value_min", "value_max", "value_median"]
+    + ["input_rows", "T", "reps",
+       "raw_missing_rate", "zero_rate", "nonpositive_rate",
+       "unique_gene_names", "duplicate_gene_rows",
+       "input_sha256", "derivation_sha256"]
     + ["final_retained_genes", "profiles", "n_perms", "permutation_mode"]
-    + ["wall_s", "peak_rss_mib", "exit_code"]
+    + ["end_to_end_wall_s", "core_wall_s", "peak_rss_mib", "exit_code"]
     + [f"stage_{key}_s" for key in STAGE_KEYS]
     + ["pystemtc_version", "git_commit", "python", "numpy", "pandas", "platform",
-       "cpu_model", "logical_cpu_count", "ram_gib", "os_release", "java_version"]
+       "cpu_model", "logical_cpu_count", "ram_gib", "os_release",
+       "java_bin", "java_version", "stem_jar_path", "stem_jar_sha256"]
 )
 
 
-def _env_versions(git_commit: str) -> dict:
+def _env_versions(git_commit: str, java_bin: str = "", java_version_str: str = "",
+                  stem_jar: str = "", stem_jar_sha256: str = "") -> dict:
     import importlib.metadata as md
     out = {
         "pystemtc_version": md.version("pystemtc") if _pkg_installed("pystemtc") else "0.0.0+local",
@@ -587,7 +683,10 @@ def _env_versions(git_commit: str) -> dict:
         "logical_cpu_count": str(os.cpu_count() or 0),
         "ram_gib": str(round(_ram_gib(), 1)),
         "os_release": _platform.release(),
-        "java_version": _java_version(),
+        "java_bin": java_bin or "",
+        "java_version": java_version_str or _java_version(),
+        "stem_jar_path": stem_jar or "",
+        "stem_jar_sha256": stem_jar_sha256 or "",
     }
     return out
 
@@ -617,8 +716,9 @@ def _ram_gib() -> float:
     return 0.0
 
 
-def _java_version() -> str:
-    java = os.environ.get("JAVA_BIN") or shutil.which("java") or "java"
+def _java_version(java: str | None = None) -> str:
+    if java is None:
+        java = os.environ.get("JAVA_BIN") or shutil.which("java") or "java"
     try:
         out = subprocess.run([java, "-version"], capture_output=True, text=True, timeout=10)
         return (out.stderr or out.stdout).splitlines()[0].strip()
@@ -646,19 +746,24 @@ def _csv_row(dataset_id: str, run_idx: int, kind: str, lang: str,
         "run": run_idx,
         "kind": kind,
         "language": lang,
-        "spots": profile["spots"],
-        "time_points": profile["time_points"],
-        "repeat_files": profile["repeat_files"],
-        "missing_rate": profile["missing_rate"],
+        "input_rows": profile["input_rows"],
+        "T": profile["T"],
+        "reps": profile["reps"],
+        "raw_missing_rate": profile["raw_missing_rate"],
         "zero_rate": profile["zero_rate"],
-        "value_min": profile["value_min"],
-        "value_max": profile["value_max"],
-        "value_median": profile["value_median"],
+        "nonpositive_rate": profile["nonpositive_rate"],
+        "unique_gene_names": profile["unique_gene_names"],
+        "duplicate_gene_rows": profile["duplicate_gene_rows"],
+        "input_sha256": profile["input_sha256"],
+        "derivation_sha256": profile["derivation_sha256"],
         "final_retained_genes": summary.get("genes_retained", ""),
         "profiles": summary.get("profiles", ""),
-        "n_perms": "",  # manifest-driven, surface in profile row
+        "n_perms": "",  # manifest-driven, surfaced in summary.md
         "permutation_mode": summary.get("permutation_mode", ""),
-        "wall_s": round(payload["wall_s"], 4),
+        "end_to_end_wall_s": round(payload.get("end_to_end_wall_s", 0.0), 4),
+        "core_wall_s": round(payload["core_wall_s"], 4)
+                       if isinstance(payload.get("core_wall_s"), float)
+                       else payload.get("core_wall_s", ""),
         "peak_rss_mib": round(payload["peak_rss_bytes"] / 2 ** 20, 1),
         "exit_code": payload["exit_code"],
         "pystemtc_version": env["pystemtc_version"],
@@ -671,7 +776,10 @@ def _csv_row(dataset_id: str, run_idx: int, kind: str, lang: str,
         "logical_cpu_count": env["logical_cpu_count"],
         "ram_gib": env["ram_gib"],
         "os_release": env["os_release"],
+        "java_bin": env["java_bin"],
         "java_version": env["java_version"],
+        "stem_jar_path": env["stem_jar_path"],
+        "stem_jar_sha256": env["stem_jar_sha256"],
     }
     for key in STAGE_KEYS:
         v = payload["stages"].get(key, "")
@@ -682,46 +790,89 @@ def _csv_row(dataset_id: str, run_idx: int, kind: str, lang: str,
 def _write_summary_md(out_dir: Path, dataset_id: str, profile: dict,
                       py_payloads: list[dict], java_payloads: list[dict],
                       consistency: dict, env: dict, args: argparse.Namespace) -> None:
-    py_walls = [p["wall_s"] for p in py_payloads]
-    java_walls = [p["wall_s"] for p in java_payloads]
+    """Write the main table. Round-7.5:
+
+    - **end_to_end_wall** is the cross-language-comparable metric
+      (parent subprocess.run timer; same on both sides).
+    - **core_wall** is reported for PySTEMTC only; Java has no internal
+      stage timer (no faking).
+    - Py/Java end-to-end ratio is descriptive only -- NOT a release gate.
+    """
+    py_e2e = [p["end_to_end_wall_s"] for p in py_payloads]
+    java_e2e = [p["end_to_end_wall_s"] for p in java_payloads]
+    py_core = [p["core_wall_s"] for p in py_payloads if isinstance(p.get("core_wall_s"), float)]
     py_rss = [p["peak_rss_bytes"] for p in py_payloads]
     java_rss = [p["peak_rss_bytes"] for p in java_payloads]
+
     md = out_dir / "summary.md"
     lines = [
         f"# Real-data benchmark summary -- {dataset_id}",
         "",
-        f"- generated: {env['pystemtc_version']} @ {env['git_commit']}",
+        f"- generated: pySTEMTC {env['pystemtc_version']} @ {env['git_commit']}",
         f"- Python: {env['python']}, NumPy {env['numpy']}, pandas {env['pandas']}",
-        f"- Java: {env['java_version']}",
+        f"- Java: {env['java_version']} (binary: `{env['java_bin']}`)",
+        f"- stem.jar: `{env['stem_jar_path']}` (sha256 `{env['stem_jar_sha256'][:16]}...`)",
         f"- platform: {env['platform']}",
         f"- CPU: {env['cpu_model']} ({env['logical_cpu_count']} logical), RAM {env['ram_gib']} GiB",
         "",
-        "## Dataset profile",
+        "> **Performance vs Compatibility**: The first-column judgment is "
+        "**assignment_exact** (Java vs PySTEMTC profile_id order on every "
+        "retained gene). Performance numbers (end-to-end wall, peak RSS) "
+        "are descriptive, NOT release-blocking. The Py/Java end-to-end ratio "
+        "above 1 is *not* a release gate -- it would be *fair* to compare "
+        "now because both languages use the same subprocess-isolated "
+        "measurement protocol.",
         "",
-        "| dataset_id | spots | T | reps | missing_rate | zero_rate | value range | value_median |",
-        "|---|---|---|---|---|---|---|---|",
-        f"| {dataset_id} | {profile['spots']} | {profile['time_points']} |"
-        f" {profile['repeat_files']} | {profile['missing_rate']:.4f} | {profile['zero_rate']:.4f} |"
-        f" [{profile['value_min']}, {profile['value_max']}] | {profile['value_median']} |",
+        "## Dataset profile (round-7.5 expanded schema)",
         "",
-        "## Compatibility A (gene -> profile_ids)",
+        "| dataset_id | input_rows | unique_genes | dup_rows | T | reps |",
+        "|---|---|---|---|---|---|",
+        f"| {dataset_id} | {profile['input_rows']} | {profile['unique_gene_names']} |"
+        f" {profile['duplicate_gene_rows']} | {profile['T']} | {profile['reps']} |",
+        "",
+        "| raw_missing | zero | nonpositive (= effective missing under log) | value range | value_median |",
+        "|---|---|---|---|---|",
+        f"| {profile['raw_missing_rate']:.4f} | {profile['zero_rate']:.4f} |"
+        f" {profile['nonpositive_rate']:.4f} | [{profile['value_min']}, {profile['value_max']}] |"
+        f" {profile['value_median']} |",
+        "",
+        "### Provenance (sha256)",
+        "",
+        f"- input_sha256 (from manifest.description): `{profile['input_sha256'] or '(not provided)'}`",
+        f"- derivation_sha256 (main.txt on disk): `{profile['derivation_sha256']}`",
+        f"- derivation_description: {profile['derivation_description'] or '(none)'}",
+        "",
+        "## assignment_exact (round-7.5; ordered list, NOT set)",
         "",
         f"- Java retained: {consistency['n_common'] + consistency['n_java_only']}",
         f"- Py retained:   {consistency['n_common'] + consistency['n_py_only']}",
         f"- Common:        {consistency['n_common']}",
         f"- Java-only:     {consistency['n_java_only']}",
         f"- Py-only:       {consistency['n_py_only']}",
-        f"- Mismatches in common: {consistency['n_mismatches']}",
-        f"- **A exact: {'PASS' if consistency['a_exact'] else 'FAIL'}**",
+        f"- Mismatches in common (ordered-list !=): {consistency['n_mismatches']}",
+        f"- **assignment_exact: {'PASS' if consistency['assignment_exact'] else 'FAIL'}**",
+    ]
+    if consistency.get("first_mismatches"):
+        lines += ["", "First mismatches:", ""]
+        for g, java_l, py_l in consistency["first_mismatches"]:
+            lines.append(f"  - `{g}`: java={java_l}  py={py_l}")
+    lines += [
         "",
-        "## Main table (median over formal runs)",
+        "## Compatibility C1",
         "",
-        "| Language | wall_s median | wall_s min | wall_s max | RSS MiB median | exit_code |",
+        "> **NOT YET ASSESSED** -- the writer (``STEMResult.write_java_tables``) "
+        "is implemented in a future round; before then, this benchmark cannot "
+        "produce a Python genetable / profiletable to byte-compare against the "
+        "Java oracle. See docs/03 §1.10 (round-7.3 writer contract sweep).",
+        "",
+        "## Main table -- end-to-end wall (parent subprocess timer, cross-language-comparable)",
+        "",
+        "| Language | wall median | wall min | wall max | RSS MiB median | exit_code |",
         "|---|---|---|---|---|---|",
     ]
     for label, walls, rss, payloads in (
-        ("Python", py_walls, py_rss, py_payloads),
-        ("Java",   java_walls, java_rss, java_payloads),
+        ("Python", py_e2e, py_rss, py_payloads),
+        ("Java",   java_e2e, java_rss, java_payloads),
     ):
         if not walls:
             continue
@@ -730,11 +881,23 @@ def _write_summary_md(out_dir: Path, dataset_id: str, profile: dict,
             f"| {label} | {statistics.median(walls):.3f} | {min(walls):.3f} |"
             f" {max(walls):.3f} | {statistics.median(rss)/2**20:.1f} | {exit_codes} |"
         )
-    # stage timings (Py only)
-    if py_payloads:
-        lines += ["", "## PySTEMTC stage timings (median, seconds)", ""]
-        lines.append("| " + " | ".join(STAGE_KEYS) + " |")
-        lines.append("|" + "---|" * len(STAGE_KEYS))
+    if py_e2e and java_e2e:
+        ratio = statistics.median(py_e2e) / statistics.median(java_e2e)
+        lines.append(f"\nPy/Java end-to-end ratio (median, descriptive): **{ratio:.2f}x**")
+    if py_core:
+        lines += [
+            "",
+            "## PySTEMTC core_wall (engine.fit() internal; for Py optimization analysis only)",
+            "",
+            "| core_wall median | core_wall min | core_wall max |",
+            "|---|---|---|",
+            f"| {statistics.median(py_core):.3f} | {min(py_core):.3f} | {max(py_core):.3f} |",
+            "",
+            "## PySTEMTC stage timings (median, seconds)",
+            "",
+            "| " + " | ".join(STAGE_KEYS) + " |",
+            "|" + "---|" * len(STAGE_KEYS) + "|",
+        ]
         medians = [statistics.median([p["stages"][k] for p in py_payloads]) for k in STAGE_KEYS]
         lines.append("| " + " | ".join(f"{m:.3f}" for m in medians) + " |")
     md.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -755,9 +918,25 @@ def main() -> None:
     ap.add_argument("--formal", type=int, default=3, help="formal runs (default 3)")
     ap.add_argument("--outdir", default=None, help="default: benchmarks/results/real/<UTCts>")
     ap.add_argument("--no-java", action="store_true", help="skip Java side (Python only)")
+    ap.add_argument("--java-bin", default=None,
+                    help="path to java executable (overrides $JAVA_BIN and auto-discovery)")
+    ap.add_argument("--stem-jar", default=None,
+                    help="path to stem.jar (overrides $STEM_JAR and auto-discovery)")
+    ap.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--language", default=None, help=argparse.SUPPRESS)
     args = ap.parse_args()
     if args.formal < 1:
         raise SystemExit("--formal must be >= 1")
+
+    # Worker mode: invoked by parent as a fresh subprocess. Read the
+    # manifest, run the analysis, emit a single JSON line to stdout.
+    if args.worker:
+        manifest = _load_manifest(args.manifest)
+        dataset_id = manifest.get("id") or args.manifest.stem
+        if args.language == "python":
+            payload = _python_worker_main(manifest, dataset_id)
+            print(json.dumps(payload), flush=True)
+        return
 
     manifest = _load_manifest(args.manifest)
     dataset_id = manifest.get("id") or args.manifest.stem
@@ -768,7 +947,11 @@ def main() -> None:
 
     print(f"pySTEMTC real benchmark {stamp}: dataset={dataset_id}", flush=True)
     profile = _profile_dataset(manifest, dataset_id)
-    env = _env_versions(_git_commit())
+    # Resolve Java paths early so the env record reflects what we used.
+    java_bin, java_version_str, stem_jar, jar_sha = _resolve_java_paths(args)
+    env = _env_versions(_git_commit(), java_bin=java_bin,
+                        java_version_str=java_version_str,
+                        stem_jar=stem_jar, stem_jar_sha256=jar_sha)
     print(f"env: {env}", flush=True)
     print(f"profile: {profile}", flush=True)
 
@@ -778,22 +961,27 @@ def main() -> None:
     total = args.warmup + args.formal
     for run_idx in range(total):
         kind = "warmup" if run_idx < args.warmup else "formal"
-        # --- Python side (in-process; peak RSS is process-monotonic) ---
-        py = _python_worker_payload(manifest, dataset_id)
-        py["wall_s"] = py["wall_s"]  # already wall
-        py_payloads.append(py) if kind == "formal" else None
+        # --- Python side (fresh subprocess per run; end_to_end_wall in
+        # parent; core_wall + stage timings from worker JSON) ---
+        py, py_e2e = _spawn_python_worker(args.manifest, dataset_id)
+        py["end_to_end_wall_s"] = py_e2e
+        if kind == "formal":
+            py_payloads.append(py)
         rows.append(_csv_row(dataset_id, run_idx + 1, kind, "python", profile, py, env))
         print(f"[{dataset_id}] python {kind} run {run_idx + 1}/{total}:"
-              f" wall={py['wall_s']:.3f}s rss={py['peak_rss_bytes']/2**20:.1f}MiB",
+              f" e2e={py['end_to_end_wall_s']:.3f}s"
+              f" core={py['core_wall_s']:.3f}s"
+              f" rss={py['peak_rss_bytes']/2**20:.1f}MiB",
               flush=True)
-        # --- Java side ---
+        # --- Java side (fresh JVM per run; end_to_end_wall in parent) ---
         if not args.no_java:
-            java = _java_run(manifest, dataset_id, out_dir)
+            java = _java_run(manifest, dataset_id, out_dir, java_bin, stem_jar)
             if kind == "formal":
                 java_payloads.append(java)
             rows.append(_csv_row(dataset_id, run_idx + 1, kind, "java", profile, java, env))
             print(f"[{dataset_id}] java   {kind} run {run_idx + 1}/{total}:"
-                  f" wall={java['wall_s']:.3f}s rss={java['peak_rss_bytes']/2**20:.1f}MiB"
+                  f" e2e={java['end_to_end_wall_s']:.3f}s"
+                  f" rss={java['peak_rss_bytes']/2**20:.1f}MiB"
                   f" exit={java['exit_code']}", flush=True)
 
     # dataset profile CSV
@@ -808,12 +996,11 @@ def main() -> None:
         w = csv.DictWriter(fh, fieldnames=CSV_FIELDS)
         w.writeheader(); w.writerows(rows)
 
-    # summary
-    consistency: dict = {"a_exact": True, "n_common": 0, "n_java_only": 0, "n_py_only": 0, "n_mismatches": 0, "first_mismatches": []}
+    # summary -- assignment_exact (no C1 until writer)
+    consistency: dict = {"assignment_exact": True, "n_common": 0,
+                         "n_java_only": 0, "n_py_only": 0,
+                         "n_mismatches": 0, "first_mismatches": []}
     if py_payloads and java_payloads:
-        # Use the FIRST formal Py and Java payloads (any consistent pair works
-        # because PySTEMTC is deterministic on the same input/seed; Java is
-        # deterministic on its own RNG).
         consistency = _compare_consistency(py_payloads[0], java_payloads[0])
     _write_summary_md(out_dir, dataset_id, profile, py_payloads, java_payloads,
                       consistency, env, args)
@@ -821,8 +1008,10 @@ def main() -> None:
     print(f"profile: {profile_csv}")
     print(f"runs:    {runs_csv}")
     print(f"summary: {out_dir / 'summary.md'}")
-    print(f"A exact: {consistency['a_exact']}  (common={consistency['n_common']},"
-          f" mismatches={consistency['n_mismatches']})", flush=True)
+    print(f"assignment_exact: {consistency['assignment_exact']}  "
+          f"(common={consistency['n_common']},"
+          f" mismatches={consistency['n_mismatches']})")
+    print(f"C1 exact: NOT YET ASSESSED (writer not implemented)", flush=True)
 
 
 if __name__ == "__main__":

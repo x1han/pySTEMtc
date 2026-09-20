@@ -16,7 +16,14 @@
 (e) **Java headless 契约**：单跑必须 `-d <cfg> -o <out>` (4 args，-d 在 -o 前)；批跑 `-b <indir> <outdir>` (3 args)；`-d` 单独 (2 args) **会触发 GUI 弹窗**——harness 默认走 batch 模式避开此陷阱。
 (f) **目录约定**：真实数据仓库外 (`D:\stem\benchmark_data\`)，不进 git；manifest YAML schema 锁死；`D:\stem\testdata\` 仓库外不入仓。
 (g) **不做**：R2 (repeats) / R3 (复杂短序列) 等 user 提供更多真实数据后再补；公开可复现数据推迟到 V1.0 发布文档 round；性能优化——baseline only，不设合格线。
-(h) 147/147 测试仍绿。`benchmark_core.py` / `test_golden.py` / src/ 零触动。
+(h) 147/147 测试仍绿。`benchmark_core.py` / `test_golden.py` / src/ 零触动。**round-7.5 收口注记（2026-09-20）**：本轮实现 user 团 round-7.4 review 的 **4 个 P1 + 5 个解冻区**——`benchmark_real.py` 与 `real_manifest.example.yaml` 修订 + `D:\stem\benchmark_data\R1\main.txt` 重生成按发育时间顺序：
+(a) **P1-1 公平测量口径**——Python 端从 in-process 改为**每次 run fresh subprocess**（复用 `benchmark_core.py:225` 的 `--worker` JSON stdout 协议，parent `_spawn_python_worker` 计时 `end_to_end_wall`）；Java 端保留 fresh JVM per run。新增 `end_to_end_wall_s` + `core_wall_s` 两个 wall 列；主表第一列用 `end_to_end_wall`（跨语言可比）；Py/Java ratio 标"descriptive, NOT release-blocking"。
+(b) **P1-2 assignment_exact + C1 NOT YET ASSESSED**——`_compare_consistency` 改为**有序 list 比较**（不转 set，保 tie order）；报告字段 `assignment_exact`；Compatibility C1 段明确写 `NOT YET ASSESSED`（writer 未实现，**禁止声称 A+C1 PASS**）。R1 v2 实证：assignment_exact PASS（1635/1635，0 mismatch）。
+(c) **P1-3 全参数驱动**——Java config renderer 删 5 处硬编码（`Maximum_Correlation=1.0` / `Significance_Level=0.05` / `Clustering_Minimum_Correlation=0.7` / `Minimum_Correlation_between_Repeats=0.0` / `Change_should_be_based_on`）；`Repeat_Data_Files` / `Repeat_Data_is_from` 改为从 manifest 读；manifest schema 扩 6 字段（`max_correlation` / `alpha` / `cluster_min_correlation` / `cluster_corr_percentile` / `repeat_min_correlation` / `change_rule`）；Py 端 `engine.fit(main, replicates=reps)` 透传 repeats + `repeat_min_correlation`。
+(d) **P1-4 R1 v2 发育时间顺序**——user 确认 8W = adult 8 weeks；R1 main.txt 重生为 `E10.5 → E12.5 → E14.5 → E16.5 → P0 → P21 → 8W`；sha256 `ef8e6ae3915c50bcef518d737b915e9e36d83bb2bb02c59cf643b27a105a45ac`；retained 1631→1635（baseline 改 E10.5 后 4 个 gene 重回保留集）；source tsv sha256 `9e6dba16d1dcfcb4ea39226066e7c3bc53c0175888122134e8357285cef54514` 写入 manifest.description。
+(e) **P2/解冻区**——dataset profile schema 扩 9 字段（`input_rows` / `unique_gene_names` / `duplicate_gene_rows` / `raw_missing_rate` / `zero_rate` / `nonpositive_rate` / `input_sha256` / `derivation_sha256` / `derivation_description`）；`nonpositive_rate` 与 `raw_missing_rate` 明确区分（user 团：raw missing=0% 不代表 effective missing=0%）；Java 路径 `--java-bin` / `--stem-jar` CLI + env + auto-discovery 三级优先级（**不**放入 manifest，manifest 跨机器复用）；runs.csv 加 4 列 `java_bin` / `java_version` / `stem_jar_path` / `stem_jar_sha256`；删自写 YAML fallback，PyYAML 必需（实测已 6.0.3 安装）。
+(f) **R1 v2 实证**——PySTEMTC e2e median 2.78 s / core 2.18 s / RSS 85.7 MiB / 1635 retained；Java STEM v1.3.14 e2e median 2.53 s / RSS 13.6 MiB / 1635 retained / exit=0；**assignment_exact PASS (1635/1635, 0 mismatch)**；C1 NOT YET ASSESSED；Py/Java ratio 1.10x（**公平可比**，双方都是 fresh subprocess；此 ratio **描述性、非发布门**）。
+(g) pre-work + post-work reviewer 双 APPROVE；147/147 测试仍绿；benchmark_core.py / tests/ / src/ 零触动。
 
 ---
 
