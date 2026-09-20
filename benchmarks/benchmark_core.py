@@ -79,6 +79,7 @@ CORE: list[BenchSpec] = [
     BenchSpec("B3", 10_000, 5),
     BenchSpec("B4", 30_000, 5),
     BenchSpec("B5", 10_000, 8),
+    BenchSpec("B9", 10_000, 9),  # round-7 path-isolator: T=9 -> on_the_fly + enumerate (5^8=390,625<1M)
     BenchSpec("B6", 10_000, 10),
 ]
 SWEEP: list[BenchSpec] = [
