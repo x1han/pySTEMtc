@@ -1,32 +1,27 @@
-=== git log (HEAD) ===
+=== git log (HEAD 5) ===
+4cbb4a0 docs(round-7): fix §3.4 B6 causal claim, 139→146 typo, nike/n_permutations, residual fragment
+4e3d0e6 feat(benchmarks): emit candidate_path + candidate_universe columns (round-7 P2)
+894850f docs: round-7 verification artifacts (pytest log, git state, full diff)
 2e67709 docs(spec,report): orthogonality contract, B6 attribution fix, resource-budget note (round-7)
 ee48c0e feat(benchmarks): B9 path-isolator (10k x 9T); full 9-bench core run
-deb1073 fix(spec): schema v2 value_states/present orthogonality (round-7)
-d9b1224 docs: regenerate pytest evidence log with -v (per-test names)
-0d87878 docs: round-6 closing report (docs/08) + verification artifacts (pytest log, git state, full diff)
-a8dbb22 chore: packaging/CI/docs per round-6 rulings; brand iron law pySTEMTC
-d10577f feat(benchmarks): re-runnable core benchmark harness (round-6 named grid)
-fd59579 feat(result): to_dict schema v2 + per-stage timing (round-6 M1 rulings)
-51f5d64 fix(data): preserve Java genetable last-column payload for no-repeat datasets (P1)
-fc38b13 docs: M3 closing report with round-6 decision asks (to_dict schema proposal, export charset, CLI details, python floor)
-b2b5a92 M3 round-5 gate: c13/c14 branch-targeted golden fixtures (on-the-fly x missing, log re-reference -Inf/NaN quirk), branch-arrival assertions, bench tool, P2 fixes (str(rec.id), legacy_with_replacement semantics)
-ca312d8 PySTEMTC M2 baseline: engine at 12/12 golden configs (A exact, B printed-exact), round-5 rulings recorded, GPL-3.0 LICENSE, CI workflow + float-discipline AST guard
 
 === git status ===
  M verification/git_state.txt
-?? verification/pytest_full_round7.log
 (empty = clean)
 
 === diffstat 0d87878..HEAD ===
  benchmarks/README.md                               |   2 +-
- benchmarks/benchmark_core.py                       |   1 +
- .../20260919T181249Z/20260919T181249Z_core.csv     |  25 ----
- .../20260919T181249Z/20260919T181249Z_core.md      |  30 -----
- .../20260920T033542Z/20260920T033542Z_core.csv     |  37 +++++
- .../20260920T033542Z/20260920T033542Z_core.md      |  36 +++++
- docs/03_v1_implementation_spec.md                  |  27 ++--
- docs/08_m4_round6_report.md                        | 105 ++++++++-------
- src/pystemtc/result.py                             |  68 ++++++----
- tests/test_result_schema.py                        |  34 +++++
- verification/pytest_full_20260920_025500.log       | 149 ++++++++++++++++++++-
- 11 files changed, 372 insertions(+), 142 deletions(-)
+ benchmarks/benchmark_core.py                       |  38 +-
+ .../20260919T181249Z/20260919T181249Z_core.csv     |  25 -
+ .../20260919T181249Z/20260919T181249Z_core.md      |  30 -
+ .../20260920T033542Z/20260920T033542Z_core.csv     |  37 +
+ .../20260920T033542Z/20260920T033542Z_core.md      |  36 +
+ docs/03_v1_implementation_spec.md                  |  27 +-
+ docs/08_m4_round6_report.md                        | 113 +--
+ src/pystemtc/result.py                             |  68 +-
+ tests/test_result_schema.py                        |  34 +
+ verification/git_state.txt                         |  30 +-
+ verification/pytest_full_20260920_025500.log       | 149 +++-
+ verification/pytest_full_round7.log                | 156 ++++
+ verification/round7_full.diff                      | 865 +++++++++++++++++++++
+ 14 files changed, 1448 insertions(+), 162 deletions(-)
