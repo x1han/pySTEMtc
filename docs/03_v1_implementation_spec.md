@@ -252,12 +252,12 @@ cluster_profiles(sig, models, thr, percentile_thr) -> clusters   # 贪心球：�
 | `clusters` | `[{"id": i, "profile_ids": [...]}]`（i = 生成序） |
 | `timing` | 引擎 stage 计时 dict（键表见下） |
 
-### `_encode_value(value, present)` 真值表（正交合同，round-7 第 7 轮钉死）
+### `_encode_value(value, present)` 真值表（round-7.1 钉死）
 
-**两个维度正交**，任一维度都不能推出另一维度：
+**两个信息维度必须同时保留，不得互相替代**：
 
 - `present` = Java pma 是否 present 的**唯一权威字段**（与 `_encode_value` 无函数依赖，仅作为传入位）；schema 上由 `GeneAssignment.present` 字段独立报出，不在 `value_states` 里重复。
-- `value_states` = 存储 double 的 payload 类别。**非有限 payload 与 present 无关**——可以是 `present=True` 也可以是 `present=False`。
+- `value_states` = 存储 double 的 payload 类别。**非有限 payload 的分类独立于 present**；对于**有限 payload**，再由 present 区分 `"finite"` 与 `"missing"`。
 
 | 存储 double | present | state | values |
 |---|---|---|---|
@@ -268,6 +268,8 @@ cluster_profiles(sig, models, thr, percentile_thr) -> clusters   # 贪心球：�
 | 有限 | False | `"missing"` | 填充值（0.0 或 −v0 幻影） |
 
 **正确等价**：`state=="finite" ⇔ value 有限 ∧ present==True`；`state=="missing" ⇔ value 有限 ∧ present==False`。**禁止**写成 `present=True ⇒ state=="finite"`（c14 实证 `present=False ∧ −Inf` 报 `"negative_infinity"`，同理 `present=True ∧ −Inf` 也报 `"negative_infinity"`，不是 `finite`）。
+
+**真值表规模（round-7.1 精确表述）**：8 个语义组合（4 类 payload × 2 种 present），加上额外的 finite 代表值，参数化测试共 10 case（`tests/test_result_schema.py::test_encode_value_truth_table_8_semantic_combinations`）——其中 `(-inf, False)` 是 `-Inf` 这一类的重复（同一语义），两个 `finite+True` case 是同一语义的不同代表值，**不是 10 个不同语义 cell**。
 
 **为何不能折叠成 missingness-only 字段**：那样会丢掉 Java 存储 payload（c14 末列 −Inf、c13 末列幻影 0.948），把 `value_states` 重命名为 `missingness_state` 是第 7 轮专家**明令否决**的——字段名保留 `value_states`，含义为"这个 cell 实际保存的 double 是什么类别"，与 `present` 各司其职。M4 writer 必须读 (value, state, present) 三维才能精确重建 Java genetable（含 `""` vs 格式化的判别、`-0.00` 与 ∞/U+FFFD 渲染）。严格 JSON：`json.dumps(to_dict, allow_nan=False)` 必须成功（测试钉死）。
 
@@ -283,7 +285,9 @@ cluster_profiles(sig, models, thr, percentile_thr) -> clusters   # 贪心球：�
 
 > "Compatibility-first implementation. The V1.0 core intentionally favors behavioral fidelity over vectorized performance." + 实测数字（`tools/bench.py` 三档：300×6T 0.3s / 3000×10T 29.3s / 10000×10T 53.5s wall；peak RSS ~870 MiB）。**870 MiB 不得称轻量**。
 
-**资源预算提示（round-7 专家原话插入）**：在当前 Windows benchmark 中，10,000 spots × 10 time points、Java 默认兼容参数下观察到约 873 MiB peak RSS。资源受限环境应在正式分析前用代表性输入做 benchmark。**为降低资源使用而修改 STEM 算法参数可能改变 model profiles 及最终结果，因此兼容模式下不建议仅以性能为目的修改这些参数**（不许写"内存不足时把 T 调小/调 candidate_cap 调子集"之类的指引——T/max_unit_change/candidate_cap/n_permutations 都属算法参数，调整即破坏 Java 兼容性）。
+**资源预算提示（round-7.1 专家原话）**：在当前 Windows benchmark 中，10,000 spots × 10 time points、默认兼容参数下观察到约 873 MiB peak RSS。资源受限环境建议先用代表性数据进行 benchmark。**为复现某次 Java STEM 分析，应保持输入与算法参数一致；仅为降低资源消耗而修改 `time points`、`max_unit_change`、`candidate_cap` 或 `n_permutations` 可能改变分析结果，因此修改后的结果不应再与原参数 Java run 直接比较**。
+
+注意：`time points` 本身首先是**实验输入结构**（与 spot 数同层），不应与 `max_unit_change` / `candidate_cap` / `n_permutations` 这些算法参数简单混称。同一份输入数据换一组算法参数是合理的实验设计；但改算法参数后得到的 PySTEMTC 结果，与原参数下 Java run 不应再直接比较——它们是两次不同的分析。
 
 ### format_java_double 晋升
 

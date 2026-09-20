@@ -64,6 +64,14 @@ SEED_DEFAULT = 20260919
 # Candidate-profile cap matches engine.STEM(candidate_cap=...) default.
 # Mirrors the worker construction at line ~212; rounds-7 expert attribution
 # of B6's 873 MiB peak to the sample-1M branch is anchored here.
+# NOTE (round-7.1 P3): these constants are derived from the engine call
+# site, NOT read back from `result.metadata`.  They match because the
+# worker hard-codes `candidate_cap=1_000_000` and `max_unit_change=2`.
+# If the harness ever lets `candidate_cap` or `max_unit_change` vary per
+# bench, ``_candidate_path`` MUST read back from
+# ``result.metadata["candidate_path"]`` (engine to add) instead of
+# recomputing — otherwise the annotation will drift from the actual
+# engine dispatch.
 CANDIDATE_CAP = 1_000_000
 MAX_UNIT_CHANGE = 2  # (2*MUC+1) is the per-column move cardinality
 
