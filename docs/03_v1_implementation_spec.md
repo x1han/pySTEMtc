@@ -322,7 +322,7 @@ class STEMResult:
         """
 ```
 
-**Genetable 列顺序 + 表头（round-7.3 P1-3 + P1-5 实证，ST.java:2989-2999 + DataSetCore.java:359-378）**：
+**Genetable 列顺序 + 表头（round-7.3 实证，ST.java:2989-2999 + DataSetCore.java:359-378）**：
 - 第一行表头 `<gene_header>\t<probe_header>\t<"Profile"|"Cluster">\t<t1>\t<t2>\t...\t<tT>`。
   - `<gene_header>` / `<probe_header>` 取自 `result.input["gene_header"]` / `result.input["probe_header"]`（verbatim path header；DataFrame 入口为 canonical `"gene"` / `"spot"|"probe"`）。
   - **Java 固定 swap：基因列在左、探针列在右**，即使 input 中 probe 在前（`Probe_ID SYMBOL_X 0h 1h 2h`）也写为 `<gene> \t <probe>`。
