@@ -1,0 +1,14 @@
+=== c01 different-period repeat ===
+c01_out\c01_genetable.txt
+c01_out\c01_profiletable.txt
+exit_code=0
+
+=== c07 same-period repeat ===
+c07_out\c07_genetable.txt
+c07_out\c07_profiletable.txt
+exit_code=0
+
+=== R1 Brain7 (no repeat) ===
+r1_out\r1_genetable.txt
+r1_out\r1_profiletable.txt
+exit_code=0

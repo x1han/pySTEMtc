@@ -35,6 +35,21 @@ from .result import GeneAssignment, ProfileRecord, STEMResult
 from .significance import correct, count_pvalue
 
 
+# M5 warning (FINAL-A A5, contract-cleanup FIN-B hotfix):
+# FROZEN single source of truth for the warning text emitted when
+# ``normalize='none_add0'`` is combined with ``permute_t0=True``.
+# The text is referenced both by the engine (via warnings.warn) and by
+# tests/test_m5_warning.py (via equality assertion) so the contract
+# cannot drift between the two halves.  Changing this string is a
+# contract break for downstream tooling that may grep on it.
+M5_WARNING = (
+    "M5: normalize='none_add0' with permute_t0=True permutes the "
+    "synthetic zero baseline together with observed time points, "
+    "matching legacy STEM v1.3.14 behavior. Interpret "
+    "permutation-based significance with caution."
+)
+
+
 class STEM:
     """Headless port of the STEM clustering method (defaults mirror
     ``defaults.txt``, ST.java:61-115)."""
@@ -119,14 +134,7 @@ class STEM:
         # expected count for any model whose t0 is large in magnitude.
         # Emit the warning once per analysis (NOT once per permutation).
         if config.normalize == "none_add0" and config.permute_t0:
-            warnings.warn(
-                "M5: normalize='none_add0' with permute_t0=True permutes "
-                "the synthetic zero baseline together with observed time "
-                "points, matching legacy STEM v1.3.14 behavior. "
-                "Interpret permutation-based significance with caution.",
-                UserWarning,
-                stacklevel=2,
-            )
+            warnings.warn(M5_WARNING, UserWarning, stacklevel=2)
 
         wall_start = time.perf_counter()
         timing: dict[str, float] = {}

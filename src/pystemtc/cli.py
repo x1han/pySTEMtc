@@ -135,7 +135,10 @@ def _run_one_config(
         clustering_method=config.clustering_method,
     )
 
-    result = stem_engine.fit(data_file)
+    result = stem_engine.fit(
+        data_file,
+        replicates=list(config.repeat_files) or None,
+    )
     prefix = config_path.stem
     return result.write_java_tables(
         output_dir, prefix=prefix, encoding=encoding, newline=newline,

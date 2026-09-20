@@ -1,7 +1,7 @@
 # FINAL_ALGORITHM_ACCEPTANCE
 
-**Date**: 2026-09-20
-**HEAD**: `8d160a7` (FINAL-A implementation closeout)
+**Date**: 2026-09-21
+**HEAD**: see `verification/git_state.txt` (FINAL-B hotfix commit, post expert-review)
 **Branch**: `main`
 **Final**: pySTEMTC algorithm development is **FROZEN**.
 **Ready for real time-course datasets**: **YES**.
@@ -17,79 +17,131 @@ pySTEMTC algorithm development: FROZEN
 Ready for real time-course datasets: YES
 ```
 
-## A1 -- Reproduction baseline
+## Status against the round-1 spec gates
 
-- HEAD at start of FINAL-A: `c753afa` (clean working tree, see commit message).
+| gate | status |
+|---|---|
+| Python API repeat wiring | **PASS** |
+| CLI no-repeat | **PASS** |
+| CLI different-period repeat | **PASS** (byte-exact vs Java c01 oracle) |
+| CLI same-period repeat | **PASS** (byte-exact vs Java c07 oracle) |
+| R1 testdata (Brain 7) | **PASS** (byte-exact vs Java R1 oracle) |
+| Writer C1 (decoded-exact) | **PASS** |
+| Writer C2 (byte-exact) | **PASS** |
+| Wheel clean-install | **PASS** (`/c/tmp/fin_b_smoke` byte-exact with Java) |
+| Full pytest | **PASS** (285 passed in 481.49s; real number) |
+| Git clean | **PASS** (no untracked files) |
+
+## FINAL-B hotfix (post expert-review)
+
+The expert team reproduced a **P0-DELIVERY bug**: the CLI silently
+ignored `Repeat_Data_Files`.  Three CLI runs (c01, c07, c08) produced
+identical SHA256 for both tables.  Root cause: `cli._run_one_config`
+called `stem_engine.fit(data_file)` without `replicates=`.
+
+Fix:
+
+```python
+# src/pystemtc/cli.py::_run_one_config
+result = stem_engine.fit(
+    data_file,
+    replicates=list(config.repeat_files) or None,
+)
+```
+
+This was the only P0 the experts surfaced; algorithm core and R1
+Brain7 path were not touched.
+
+## M5 contract cleanup
+
+The M5 warning text was previously a duplicated string in two places
+(engine + tests, fragment-matched).  The hotfix promotes it to a
+single source of truth:
+
+```python
+# src/pystemtc/engine.py
+M5_WARNING = (
+    "M5: normalize='none_add0' with permute_t0=True permutes the "
+    "synthetic zero baseline together with observed time points, "
+    "matching legacy STEM v1.3.14 behavior. Interpret "
+    "permutation-based significance with caution."
+)
+```
+
+`tests/test_m5_warning.py` now asserts full equality:
+
+```python
+assert str(w.message) == M5_WARNING
+```
+
+Drift between the two halves is now caught at test time.
+
+## A1 — Reproduction baseline
+
+- HEAD at start of FINAL-A: `c753afa` (clean working tree).
 - Python: 3.14.3 (C:\Python314\python.exe).
 - numpy 2.4.6, pandas 3.0.3.
 - Java: JRE 1.8.0_451 (STEM v1.3.14 reference).
 
-## A2 -- Writer closeout
+## A2 — Writer closeout
 
 - `STEMResult.write_java_tables(encoding=None, newline=None)` defaults.
-  `None` = platform default (mirrors Java on this host).  For C2
-  byte-exact comparison against the Java golden oracles, pass
-  `encoding="gbk", newline="\r\n"` explicitly.
+  `None` = platform default.  Pass `encoding="gbk", newline="\r\n"` for
+  C2 byte-exact against the Java golden oracles.
 - Last column always rendered (Java ST.java:3033 quirk).
 - Interior cell empty when `present[j] == False` (priority over NaN
-  payload).  New test `test_genetable_cell_missing_interior_overrides_nan_payload`.
+  payload).  Test: `test_genetable_cell_missing_interior_overrides_nan_payload`.
 - Single source of truth: `pystemtc.javaformat.format_java_double`
-  (two-path dispatch: binary HALF_EVEN + Decimal(repr) fallback).
+  (two-path dispatch).
 - W1 = 57, W2 = 30, W3 = 30 (all green).
 
-## A3 -- Manifest + summary banner
+## A3 — Manifest + summary banner
 
 - R1 manifest fields renamed:
-  - `input_sha256`      -> `source_sha256`
-  - `derivation_sha256` -> `analysis_input_sha256`
+  - `input_sha256`      → `source_sha256`
+  - `derivation_sha256` → `analysis_input_sha256`
 - Summary banner rewritten:
-  - "equivalent-workload process-level wall" (both languages run
-    analysis + writer; workload is equivalent).
+  - "equivalent-workload process-level wall"
   - "R1 observed Py/Java ratio is descriptive only.  Its source is
     not characterized.  It is NOT a release gate.  V1 has no
     performance pass/fail threshold."
   - PROVISIONAL / mechanism-attribution language removed.
-- Ratio relabeled: "descriptive only, NOT a release gate".
 
-## A4 -- CLI
+## A4 — CLI
 
 - New: `src/pystemtc/cli.py` + `[project.scripts] pystemtc = "pystemtc.cli:main"`.
 - Frozen surface:
   - `pystemtc run    --config <defaults.txt> --output <dir>`
   - `pystemtc batch  --config-dir <dir>  --output <dir>`
-- Frozen exit codes:
-  - `0` = success
-  - `1` = analysis / config / I/O failure
-  - `2` = CLI usage error
+- Frozen exit codes: 0 = success, 1 = analysis / config / I/O failure,
+  2 = CLI usage error.
 - Relative path rule: `Data_File` / `Repeat_Data_Files` resolved
   against the config file's directory, not CWD.
 - Batch mode: continues on per-config failure; exit 1 if any failed.
-- Config detection (batch): first non-blank, non-`#` line is
-  `Data_File<TAB>value` -- protects against `g27_1.txt` data files
-  being treated as configs.
-- 11 tests in `tests/test_cli.py` (run=0/1/2, batch=0/1,
+- Repeat wiring: passes `replicates=list(config.repeat_files) or None`
+  to `engine.fit()`.  `repeat_mode` is passed to `STEM()` constructor.
+- 14 tests in `tests/test_cli.py` (run=0/1/2, batch=0/1,
   batch-continues-on-failure, relative-path-resolved-against-config,
-  in-process and `python -m` subprocess entry points).
+  **CLI c01 different-period byte-exact vs Java oracle**,
+  **CLI c07 same-period byte-exact vs Java oracle**,
+  c01/c07/c08 outputs distinct).
 
-## A5 -- M5 warning
+## A5 — M5 warning
 
 - Emits **once per analysis** when `normalize='none_add0'` AND
   `permute_t0=True`.
-- Frozen text (in `src/pystemtc/engine.py`):
-  > M5: normalize='none_add0' with permute_t0=True permutes the
-  > synthetic zero baseline together with observed time points,
-  > matching legacy STEM v1.3.14 behavior.  Interpret
-  > permutation-based significance with caution.
+- Frozen text lives in `pystemtc.engine.M5_WARNING`.
 - Category: `UserWarning`.
-- 6 tests in `tests/test_m5_warning.py`.
+- 7 tests in `tests/test_m5_warning.py` (fires / silent on each axis,
+  exactly-once, UserWarning category, **text equals frozen constant**).
 
-## A6 -- Real testdata canonical run
+## A6 / A7 — Real testdata canonical run
 
 - Source: `D:/stem/testdata/stem.testdata.tsv`
   - `source_sha256 = 9e6dba16d1dcfcb4ea39226066e7c3bc53c0175888122134e8357285cef54514`
 - Derived analysis main.txt: `final_acceptance/R1_brain_trajectory/main.txt`
   - `analysis_input_sha256 = ef8e6ae3915c50bcef518d737b915e9e36d83bb2bb02c59cf643b27a105a45ac`
-- **Anchor check (P0 if violated)**:
+- **Anchor check**:
 
 | metric | expected | actual |
 |---|---|---|
@@ -100,36 +152,21 @@ Ready for real time-course datasets: YES
 | significant profile ids | {10,16,17,39,41,44,49} | **{10,16,17,39,41,44,49}** |
 
 - **Byte-exact (C2)**:
-  - Python API == Python CLI: **byte-exact** (genetable, profiletable)
-  - Python API == Java STEM v1.3.14: **byte-exact** (genetable, profiletable)
+  - Python API == Python CLI: byte-exact
+  - Python API == Java STEM v1.3.14: byte-exact (genetable 90 079 B,
+    profiletable 3 364 B)
 
-## A7 -- final_acceptance drop
+## A8 — Full pytest
 
-`final_acceptance/R1_brain_trajectory/` contains 11 files:
-
-1. `source_manifest.yaml`
-2. `main.txt`
-3. `R1_brain_trajectory_genetable.txt` (Python API output)
-4. `R1_brain_trajectory_profiletable.txt` (Python API output)
-5. `java_R1_brain_trajectory_genetable.txt` (Java STEM v1.3.14 output)
-6. `java_R1_brain_trajectory_profiletable.txt` (Java STEM v1.3.14 output)
-7. `testdata_result_summary.md` (anchor + byte-exact evidence)
-8. `pytest_full.log` (full pytest, last line = real count)
-9. `cli_run.log` (CLI run exit 0)
-10. `cli_batch.log` (CLI batch exit 1, 1/2 configs failed by design)
-11. `provenance.txt` (toolchain snapshot)
-
-## A8 -- Full pytest
-
-**281 passed in 468.37s** (real number from the run, not hardcoded).
+**285 passed in 481.49s** (FINAL-B hotfix; FINAL-A was 281).
 
 | suite | passed |
 |---|---|
 | `test_units.py` | 35 |
 | `test_units_m2.py` | 20 |
 | `test_writer.py` | 57 |
-| `test_cli.py` | 11 |
-| `test_m5_warning.py` | 6 |
+| `test_cli.py` | **14** (was 11; +3 = c01, c07, distinctness) |
+| `test_m5_warning.py` | **7** (was 6; +1 = constant-equality) |
 | `test_integration_fixture.py` | 17 |
 | `test_golden.py` | 42 |
 | `test_golden_branches.py` | 6 |
@@ -138,44 +175,54 @@ Ready for real time-course datasets: YES
 | `test_float_discipline.py` | 1 |
 | `test_result_schema.py` | 22 |
 | `test_rng.py` | 4 |
-| **TOTAL** | **281** |
+| **TOTAL** | **285** |
 
 9 warnings are all the M5 warning firing on the `c04_add0` and
-`headers_custom` golden cases (the M5 combination is intentional
-and exercised as a byte-exact oracle for that branch).
+`headers_custom` golden cases (intentional M5 combination exercised
+as a byte-exact oracle for that branch).
 
-## A9 -- FINAL-A commit
+## A9 — FINAL-A + FINAL-B + FIN-B hotfix commits
 
-- Commit `8d160a7` carries the entire FINAL-A diff: 20 files,
-  6732 insertions(+), 35 deletions(-).
-- Working tree is clean (modulo one stray `docs/08_m4_round8_final_report.md`
-  from a previous round, which is left out of FINAL-A).
+- `8d160a7` FINAL-A: writer defaults, CLI, M5 warning, R1 anchor + Java byte-exact, 281 green.
+- `c5114b7` FINAL-B: README, FINAL_ALGORITHM_ACCEPTANCE, refreshed git_state.
+- `70d0520` docs(round-FINAL): expert review request for V1 byte-exact + CLI + M5.
+- The FIN-B hotfix commit (this round) closes the P0 wiring bug.
 
-## FINAL-B -- Post-review
+## Clean-install smoke evidence (FIN-B)
 
-- Wheel builds: `pystemtc-0.1.0-py3-none-any.whl` (63 362 bytes,
-  sha256 `e85c965ff9f2f60deb779cb77a446d029fc24a031079e2ad0398b02ee1dddc7a`).
-- Fresh-venv clean-install smoke test:
-  - `python -m venv /tmp/pystemtc_smoke_venv`
-  - `pip install pystemtc-0.1.0-py3-none-any.whl numpy pandas`
-  - `pystemtc --help` shows `run` and `batch` subcommands.
-  - `pystemtc run --config /c/tmp/cfg/R1.txt --output /c/tmp/out --encoding gbk --newline $'\r\n'`
-    from CWD `/c/tmp` (outside the repo) writes both tables;
-    output bytes are **byte-exact** with the canonical FINAL-A output
-    (sha256 `b74b2a388382e258e99b1a87c6e2653e` on both).
-- README: `D:/stem/pySTEMtc/README.md` (root, GitHub-flavored markdown).
-- Final review zip: `verification/final_algorithm_review.zip`
-  (TBD after FINAL-B passes).
+Captured to `final_acceptance/R1_brain_trajectory/_smoke/clean_install_smoke.log`:
+
+```
+wheel: dist/pystemtc-0.1.0-py3-none-any.whl
+  size = 63 628 B
+  sha256 = 58aa228136532a43ac952a25643f89ca9bc93e6160db6d264ebfb023e69ccb9d
+
+fresh venv: /tmp/pystemtc_smoke_venv
+  pip install pystemtc-0.1.0-py3-none-any.whl numpy pandas
+  pystemtc run c01  (different-period repeat) -> exit 0
+  pystemtc run c07  (same-period repeat)      -> exit 0
+  pystemtc run R1   (Brain 7, no repeat)      -> exit 0
+
+byte-exact vs Java oracle (from outside repo at /c/tmp/fin_b_smoke):
+  c01 different-period genetable   : smoke == java  (102 121 B == 102 121 B)
+  c01 different-period profiletable : smoke == java  (   2 311 B ==   2 311 B)
+  c07 same-period genetable         : smoke == java  (138 125 B == 138 125 B)
+  c07 same-period profiletable      : smoke == java  (   2 335 B ==   2 335 B)
+  R1  Brain 7 genetable             : smoke == java  ( 90 079 B ==  90 079 B)
+  R1  Brain 7 profiletable          : smoke == java  (   3 364 B ==   3 364 B)
+```
+
+Wheel is also preserved at `final_acceptance/R1_brain_trajectory/_wheel/pystemtc-0.1.0-py3-none-any.whl`
+for delivery inspection.
 
 ## Out of V1 scope (will not be added)
 
-- K-means clustering method
-- Two-condition comparison
-- GO / KEGG enrichment
-- GUI / interactive display
-- R2 / R3
+- K-means clustering method (`NotImplementedError` at `_analyze()`).
+- Two-condition comparison / GO / KEGG enrichment.
+- GUI / interactive display.
+- R2 / R3 (future).
 
 ---
 
-**Acceptance**: pySTEMTC V1 algorithm development is **FROZEN** as of this
-commit.  Ready for real time-course datasets: **YES**.
+**Acceptance**: pySTEMTC V1 algorithm development is **FROZEN** as of
+the FIN-B hotfix commit.  Ready for real time-course datasets: **YES**.

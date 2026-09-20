@@ -43,10 +43,23 @@ engine = STEM(
     max_unit_change=cfg.max_unit_change,
     max_model_profiles=cfg.max_model_profiles,
     # ... pass every config field you want to override
+    repeat_mode=cfg.repeat_mode,
 )
-result = engine.fit(cfg.data_file)
+result = engine.fit(
+    cfg.data_file,
+    replicates=cfg.repeat_files or None,
+)
 result.write_java_tables("out/", prefix="my_run")
 ```
+
+**Important**: when reading a `defaults.txt` via `STEMConfig.from_defaults_file`,
+**always pass `replicates=cfg.repeat_files or None`** to `engine.fit()`.  The
+config object parses `Repeat_Data_Files` correctly; the engine does not
+read it back from the config -- the API takes the repeat list as an
+explicit argument so the same engine works on in-memory `DataFrame`s.
+The CLI does this wiring automatically.  `cfg.repeat_mode`
+(`"different_periods"` | `"same_period"`) controls how the repeat set is
+merged into the main set and is passed via `STEM(repeat_mode=...)`.
 
 See `verification/derive_r1_brain7.py` for the canonical run pattern.
 

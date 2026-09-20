@@ -1,149 +1,115 @@
 # pySTEMTC V1 — Round-1 expert review request
 
-**Date**: 2026-09-20
+**Date**: 2026-09-21
 **Branch**: `main`
-**HEAD**: `c5114b7` (FINAL-B post-review of FINAL-A `8d160a7`)
-**Round status**: FINAL-A + FINAL-B both closed.  Algorithm dev **FROZEN**.
-**Review zip**: see below (no per-file dump for the experts).
+**HEAD**: see `verification/git_state.txt` (FIN-B hotfix)
+**Round status**: FINAL-A + FINAL-B + FIN-B hotfix closed.
+Algorithm dev **FROZEN**.
+**Review zip**: see `verification/final_FIN_B_review_<TS>.zip`
+(no per-file dump for the experts).
 
 ## TL;DR
 
 pySTEMTC V1 implements the Java STEM v1.3.14 M1 chain + STEM clustering
-method (M2) with **byte-exact equivalence** to the Java reference on the
-R1 Brain-trajectory testdata (1635 retained genes / 50 profiles / 7
-significant / IDs {10,16,17,39,41,44,49}).  CLI surface frozen, M5
-warning frozen, 281 tests green, wheel builds, clean-install smoke from
-`/c/tmp` (outside the repo) is byte-exact with the canonical output.
+method (M2) with **byte-exact equivalence** to the Java reference on
+three independent datasets:
 
-**Frozen words (FINAL-B acceptance)**:
+- **R1 Brain-trajectory** (1999 genes × 7 Brain time points): byte-exact
+- **c01 guillemin core** (different-period repeat): byte-exact
+- **c07 same-period**: byte-exact
+
+CLI surface frozen, M5 warning frozen via single source of truth,
+285 tests green, wheel builds, clean-install smoke from `/c/tmp/fin_b_smoke`
+(outside the repo) is byte-exact with the Java oracles on all three
+cases.  Git tree clean.
+
+**Frozen words (FIN-B acceptance)**:
 
 ```
 pySTEMTC algorithm development: FROZEN
 Ready for real time-course datasets: YES
 ```
 
-## What I want from the expert team
+## What changed since the first review request
 
-Three things, prioritized:
+The expert team's first review surfaced a **P0-DELIVERY wiring bug**:
+`cli._run_one_config` called `engine.fit(data_file)` without
+`replicates=`, silently dropping `Repeat_Data_Files`.  All three
+released V1 CLI paths (c01, c07, c08) collapsed to the same SHA256.
 
-1. **P0 sanity check on the Java byte-exact comparison** — confirm that
-   the 90079-byte genetable I produced in Python and the 90079-byte
-   Java genetable match row-for-row on R1.  This is the load-bearing
-   claim of V1; everything else is downstream of it.
-2. **P1 review of the CLI design** — frozen surface
-   `pystemtc run|batch`, exit codes 0/1/2, relative-path rule, batch
-   continues on failure.  Is anything wrong, surprising, or missing?
-3. **P2 review of the M5 warning + frozen text** — is the wording
-   correct, is once-per-analysis the right cadence, should it be
-   category `UserWarning`?
+This round (FIN-B hotfix) closes that bug:
 
-## What is settled and not up for debate
+| change | file | lines |
+|---|---|---|
+| Wire `replicates=list(config.repeat_files) or None` | `src/pystemtc/cli.py` | +2 / -1 |
+| M5 frozen text -> module constant `M5_WARNING` | `src/pystemtc/engine.py` | +9 / -5 |
+| Add c01/c07 CLI Java-oracle byte-exact tests | `tests/test_cli.py` | +180 |
+| Add M5 text-equality test | `tests/test_m5_warning.py` | +18 / -8 |
+| README Python API example now passes `replicates=` | `README.md` | +12 / -1 |
+
+No algorithm changes.  No new features.  No refactor.
+
+## Final acceptance gates
+
+| gate | evidence |
+|---|---|
+| Python API repeat | API path unchanged from FINAL-A; covered by golden tests |
+| CLI no-repeat (c08) | `tests/test_cli.py::test_cli_run_happy_path` + golden c08 byte-exact |
+| CLI different-period (c01) | `tests/test_cli.py::test_cli_c01_different_period_repeat_matches_java_byte_exact` |
+| CLI same-period (c07) | `tests/test_cli.py::test_cli_c07_same_period_repeat_matches_java_byte_exact` |
+| R1 testdata | `verification/derive_r1_brain7.py` + `final_acceptance/R1_brain_trajectory/` |
+| C1 (decoded-exact) | `tests/test_writer_golden_c1.py` (30/30) |
+| C2 (byte-exact) | `tests/test_writer_golden_c2.py` (30/30) |
+| Wheel clean-install | `final_acceptance/R1_brain_trajectory/_smoke/clean_install_smoke.log` |
+| Full pytest | `verification/pytest_full_FIN_B.log` (285 passed in 481.49s) |
+| Git clean | `git status` empty after the FIN-B hotfix commit |
+
+## What I want from the expert team (this round, in priority order)
+
+1. **P0 sanity check**: confirm the three byte-exact claims.
+   - `final_acceptance/R1_brain_trajectory/R1_brain_trajectory_genetable.txt`
+     vs `final_acceptance/R1_brain_trajectory/java_R1_brain_trajectory_genetable.txt`
+     (both 90 079 B).
+   - `final_acceptance/CLI_repeat_wiring/c01_different_period_genetable.txt`
+     vs `final_acceptance/CLI_repeat_wiring/java_c01_genetable.txt`
+     (both 102 121 B).
+   - `final_acceptance/CLI_repeat_wiring/c07_same_period_genetable.txt`
+     vs `final_acceptance/CLI_repeat_wiring/java_c07_genetable.txt`
+     (both 138 125 B).
+2. **P1 review of the M5 contract cleanup**: is the single-source-of-truth
+   pattern acceptable, or do the experts prefer a different enforcement
+   mechanism (e.g. an explicit `assert str(w.message) == M5_WARNING`
+   inside the engine, not just the test)?
+3. **P2 review of the release-readiness statement**: with the
+   c01/c07 byte-exact coverage now in place, is V1 ready for the
+   `v1.0.0` tag?
+
+## What is settled and explicitly NOT up for debate
 
 - K-means is `NotImplementedError` (frozen V1 scope).
 - GO / two-condition comparison / GUI / R2 / R3 are out of V1.
-- Writer API: `encoding=None, newline=None` defaults (platform
-  default); pass `encoding="gbk", newline="\r\n"` for C2 byte-exact.
+- Writer API: `encoding=None, newline=None` defaults; pass
+  `encoding="gbk", newline="\r\n"` for C2 byte-exact.
 - No performance pass/fail threshold (V1 has no perf gate).
 
-## Concrete open issues where I want the experts' opinion
+## Things that are NOT issues (already verified end-to-end)
 
-### A. The Java vs Python "t0 reference" divergence
-
-This is the only thing that genuinely surprised me during FINAL-A.
-
-- The R1 main.txt (1999 genes × 7 Brain columns in biological order)
-  treats column 0 (E10.5) as t0 — biologically correct.
-- A previous Java run (the v1 R1 output at
-  `D:/stem/benchmark_data/R1/out/R1_genetable.txt`, kept as a
-  reference) used **8W as t0** because the file at that time had 8W
-  in column 0.  The Java STEM output ordering matches its column
-  ordering: the file's first data column is t0.
-- When I re-ran Java STEM v1.3.14 on the v2 (biological-order) main.txt
-  via `java -cp stem.jar edu.cmu.cs.sb.stem.ST -b <cfg> <out>`, Java
-  correctly used E10.5 as t0 and produced a 90079-byte genetable
-  **byte-exact** with Python's output.
-
-So the algorithm itself agrees; the question is whether the user
-community expects STEM v1.3.14's "first column is t0" convention or
-"earliest biological time-point is t0" convention.  My implementation
-follows the file-order convention (which is what Java STEM v1.3.14
-also does).  No action needed unless the experts see a real-world
-dataset where this would bite.
-
-### B. Path handling on Windows + MSYS bash
-
-- `Path.write_text("\n".join(...))` silently translates `\n` to
-  `\r\n` on Windows, which changed `analysis_input_sha256` by exactly
-  one byte per line.  Fixed by `Path.write_bytes(....encode("utf-8"))`
-  in `verification/derive_r1_brain7.py`.  No runtime impact (the
-  runtime reader is line-orientation-agnostic) but the manifest
-  anchor required exact bytes.
-- The CLI's `--newline` argument takes a string; if a user passes
-  `--newline \r\n` from Git Bash, the escape is eaten by the shell.
-  Documented in `README.md` (use `$'\r\n'`) but worth flagging.
-
-### C. `Spot_IDs_included_in_the_data_file=false` semantics
-
-Java STEM v1.3.14 with this flag set to `false` treats the file's
-data columns as the time course; there is **no** synthetic "0"
-column prepended at write time.  The reader in `pystemtc.dataio`
-matches this.  Profile IDs are 0-indexed positions in the model
-candidate list (after `compact_profiles2` sorting).
-
-### D. JSON schema-v2 in `to_dict()`
-
-`GeneAssignment.values` carries None for NaN/±Inf (encoded as
-`value_states`), and `present` carries the pma mask.  Both are
-preserved; no information is collapsed.  This is round-7.1 territory
-and not changing in V1.
-
-### E. Out-of-scope things the experts might still ask about
-
-- K-means: explicitly `NotImplementedError` (raises at `_analyze()`).
-- V1.1 plan: K-means with `Random(2211)` + reservoir-sampling
-  restart replica (mentioned in `engine.py` error message).
-- Gene Annotation / Cross-Reference / GO / Interface sections of
-  `defaults.txt`: silently ignored (key not in `_NORMALIZE_MAP` /
-  parse dispatch).
-
-## Things that are NOT issues (already verified)
-
-| claim | evidence |
-|---|---|
-| Python API == Python CLI byte-exact | `verification/derive_r1_brain7.py` runs both and compares `read_bytes()` |
-| Python API == Java STEM v1.3.14 byte-exact | `java_R1_brain_trajectory_*.txt` in `final_acceptance/R1_brain_trajectory/` |
-| Source TSV hash matches manifest | `9e6dba16d1dcfcb4ea39226066e7c3bc53c0175888122134e8357285cef54514` |
-| Derived main.txt hash matches manifest | `ef8e6ae3915c50bcef518d737b915e9e36d83bb2bb02c59cf643b27a105a45ac` |
-| 1635 retained genes | `len(api_g.splitlines())-1 == 1635` |
-| 50 profiles / 7 significant / IDs match | re-counted; see anchor table in `FINAL_ALGORITHM_ACCEPTANCE.md` |
-| 281 tests pass | `pytest_full.log` (real number, not hardcoded) |
-| Wheel installs + CLI runs from outside repo | `/c/tmp/out/R1_genetable.txt` byte-exact with canonical |
-| M5 warning fires once, correct category | 6 tests in `tests/test_m5_warning.py` |
-
-## Next steps (my proposal, for expert input)
-
-The user has frozen algorithm dev after FINAL-B.  My recommended
-post-V1 actions, in priority order:
-
-1. **P0**: expert review of the byte-exact claim (see A above).
-2. **P1**: if review is clean, tag `v1.0.0` and publish the wheel to
-   a private index for the user's internal team.
-3. **P2**: write a short `docs/MIGRATION_FROM_JAVA_STEM.md` so
-   Java users can adopt pySTEMTC without reading the source.  This
-   is the single most impactful documentation task.
-4. **P3**: V1.1 = K-means.  Plan only, no implementation, until V1
-   ships.
-5. **P4**: `docs/V1.1_DESIGN.md` for the K-means + reservoir
-   sampling replica.  Out of scope for this review.
+- 285 tests pass (real number from this round, not hardcoded).
+- Wheel installs and runs from `/c/tmp/fin_b_smoke` (outside repo) on
+  all three byte-exact datasets.
+- Git tree is clean (no untracked files after `docs/08_m4_round8_final_report.md`
+  deletion).
+- Wheel binary is preserved at
+  `final_acceptance/R1_brain_trajectory/_wheel/pystemtc-0.1.0-py3-none-any.whl`
+  and `dist/pystemtc-0.1.0-py3-none-any.whl`.
+- Clean-install smoke log preserved at
+  `final_acceptance/R1_brain_trajectory/_smoke/clean_install_smoke.log`.
 
 ## What I'm explicitly NOT asking the experts to do
 
-- Re-read 281 tests.  The pytest log is in the zip; the per-suite
-  counts are in `FINAL_ALGORITHM_ACCEPTANCE.md`.
-- Re-derive the Java outputs.  The Java invocation pattern is in
-  `verification/derive_r1_brain7.py` (`-cp stem.jar edu.cmu.cs.sb.stem.ST -b <cfg> <out>`).
+- Re-run the 285 tests.  `verification/pytest_full_FIN_B.log` is in
+  the review zip; per-suite counts are in `01_acceptance.md`.
+- Re-run Java.  `05_derive_r1_brain7.py` has the invocation pattern.
 - Re-run the clean-install smoke.  The byte-exact comparison is in
-  the README and the zip carries the canonical output as the
-  reference.
-- Audit `engine.py` or `result.py` for performance — V1 has no
-  perf gate.
+  the smoke log and the README.
+- Audit engine.py / result.py for performance (V1 has no perf gate).

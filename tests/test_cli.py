@@ -87,6 +87,20 @@ def _bundle_g27_1(config_dir: Path) -> Path:
     return dst
 
 
+def _bundle_g27_2(config_dir: Path) -> Path:
+    """Copy tests/golden/data/g27_2.txt next to the test config.
+
+    Mirror of ``_bundle_g27_1`` for the repeat file.  Tests that need a
+    Repeat_Data_Files path resolved relative to the config directory
+    must bundle BOTH the main file and the repeat file.
+    """
+    src = Path(__file__).resolve().parent / "golden" / "data" / "g27_2.txt"
+    dst = config_dir / "g27_2.txt"
+    if not dst.exists():
+        dst.write_bytes(src.read_bytes())
+    return dst
+
+
 # ---------------------------------------------------------------------
 # main() / cmd_run
 # ---------------------------------------------------------------------
@@ -270,3 +284,193 @@ def test_cli_entry_point_via_subprocess(tmp_path: Path) -> None:
     assert proc.returncode == 0, proc.stderr
     assert (out_dir / "c08_entry_genetable.txt").is_file()
     assert (out_dir / "c08_entry_profiletable.txt").is_file()
+
+
+# ---------------------------------------------------------------------
+# CLI <-> Java byte-exact (FIN-B hotfix)
+#
+# These tests are the release-blocking coverage for the P0 wiring bug
+# fixed in this round: the CLI used to silently drop Repeat_Data_Files
+# because `_run_one_config` called `engine.fit(data_file)` without the
+# `replicates=` argument.  The c01 + c07 cases (both with the g27_2.txt
+# repeat file but different repeat_mode values) make this regression
+# loud -- the Java oracle under tests/golden/java_reference/ is what
+# the Python CLI must reproduce byte-for-byte.
+# ---------------------------------------------------------------------
+
+
+_JAVA_REFERENCE = Path(__file__).resolve().parent / "golden" / "java_reference"
+
+
+def _stage_cli_config(tmp_path: Path, *, case: str, repeat_mode_line: str) -> Path:
+    """Copy a Java configs case into tmp_path with relative Data_File
+    and Repeat_Data_Files paths pointing at the bundled data next to it.
+
+    The CLI's relative-path rule resolves these against the config's
+    own directory -- that's the path we need to exercise.
+    """
+    cfg_dir = tmp_path / "cfg"
+    cfg_dir.mkdir()
+    # Bundle g27_1.txt + g27_2.txt next to the config (relative-path test).
+    _bundle_g27_1(cfg_dir)
+    _bundle_g27_2(cfg_dir)
+    src_cfg = Path(__file__).resolve().parent / "golden" / "java_configs" / f"{case}.txt"
+    text = src_cfg.read_text(encoding="utf-8")
+    # Replace the Data_File line with the relative path that resolves to
+    # our bundled copy (the CLI resolves relative paths against the
+    # config's directory, mirroring Java STEM behavior).
+    text = _replace_tab_field(text, "Data_File", "g27_1.txt")
+    text = _replace_tab_field(text, "Repeat_Data_Files(comma delimited list)", "g27_2.txt")
+    text = _replace_tab_field(text, "Repeat_Data_is_from[Different time periods,The same time period]", repeat_mode_line)
+    dst_cfg = cfg_dir / f"{case}.txt"
+    dst_cfg.write_text(text, encoding="utf-8")
+    return dst_cfg
+
+
+def _replace_tab_field(text: str, key: str, new_value: str) -> str:
+    """Rewrite a ``key<TAB>value`` line; preserve all other lines."""
+    out = []
+    replaced = False
+    for line in text.splitlines():
+        if line.startswith(key):
+            out.append(f"{key}\t{new_value}")
+            replaced = True
+        else:
+            out.append(line)
+    if not replaced:
+        out.append(f"{key}\t{new_value}")
+    return "\n".join(out) + "\n"
+
+
+def _run_cli_through_subprocess(
+    config_path: Path, out_dir: Path, *, tmp_path: Path,
+) -> tuple[int, str, str]:
+    """Invoke `python -m pystemtc.cli run ...` in a subprocess from
+    outside the repo; return (rc, stdout, stderr).
+    """
+    cmd = [
+        sys.executable, "-m", "pystemtc.cli",
+        "run",
+        "--config", str(config_path),
+        "--output", str(out_dir),
+        "--encoding", "gbk",
+        "--newline", "\r\n",
+    ]
+    proc = subprocess.run(
+        cmd,
+        capture_output=True, text=True,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        cwd=str(tmp_path),  # outside the repo -> exercise the absolute-path sub-rule
+    )
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def _assert_cli_matches_java(
+    case: str, out_dir: Path, *, tmp_path: Path,
+) -> None:
+    """Compare the two tables the CLI just wrote against the Java oracle."""
+    cli_gene = (out_dir / f"{case}_genetable.txt").read_bytes()
+    cli_prof = (out_dir / f"{case}_profiletable.txt").read_bytes()
+    java_gene = (_JAVA_REFERENCE / f"{case}_genetable.txt").read_bytes()
+    java_prof = (_JAVA_REFERENCE / f"{case}_profiletable.txt").read_bytes()
+
+    assert cli_gene == java_gene, (
+        f"CLI genetable != Java oracle for {case}: "
+        f"cli={len(cli_gene)}B, java={len(java_gene)}B"
+    )
+    assert cli_prof == java_prof, (
+        f"CLI profiletable != Java oracle for {case}: "
+        f"cli={len(cli_prof)}B, java={len(java_prof)}B"
+    )
+
+
+def test_cli_c01_different_period_repeat_matches_java_byte_exact(
+    tmp_path: Path,
+) -> None:
+    """FIN-B hotfix regression: CLI must pass Repeat_Data_Files to engine.
+
+    c01 = g27_1.txt with g27_2.txt repeat, different-period mode.  Before
+    the hotfix this test FAILED: the CLI ignored the repeat file and the
+    resulting tables were byte-identical to the c08 (no-repeat) output.
+    """
+    cfg = _stage_cli_config(
+        tmp_path, case="c01_guillemin_core",
+        repeat_mode_line="Different time periods",
+    )
+    out_dir = tmp_path / "out"
+    rc, stdout, stderr = _run_cli_through_subprocess(cfg, out_dir, tmp_path=tmp_path)
+
+    assert rc == 0, f"CLI failed for c01: stderr={stderr}"
+    _assert_cli_matches_java("c01_guillemin_core", out_dir, tmp_path=tmp_path)
+
+
+def test_cli_c07_same_period_repeat_matches_java_byte_exact(
+    tmp_path: Path,
+) -> None:
+    """FIN-B hotfix regression: same-period repeat must also be wired.
+
+    c07 = g27_1.txt with g27_2.txt repeat, same-period mode.  Same-period
+    takes a different code path through Java STEM (DataSetCore.java:787-792)
+    so a fix to the different-period path is not sufficient.
+    """
+    cfg = _stage_cli_config(
+        tmp_path, case="c07_sameperiod",
+        repeat_mode_line="The same time period",
+    )
+    out_dir = tmp_path / "out"
+    rc, stdout, stderr = _run_cli_through_subprocess(cfg, out_dir, tmp_path=tmp_path)
+
+    assert rc == 0, f"CLI failed for c07: stderr={stderr}"
+    _assert_cli_matches_java("c07_sameperiod", out_dir, tmp_path=tmp_path)
+
+
+def test_cli_c01_c07_c08_outputs_are_all_distinct(
+    tmp_path: Path,
+) -> None:
+    """Three configs that the old broken CLI collapsed to one output.
+
+    c08 (no repeat), c01 (different-period repeat), and c07 (same-period
+    repeat) MUST produce three distinct pairs of tables.  The hash
+    collapse was the smoking gun the expert used to identify the P0
+    wiring bug; this test pins the divergence so it can never silently
+    come back.
+    """
+    import hashlib
+
+    cases = [
+        ("c08_norepeat", "Different time periods", ""),  # no repeat file
+        ("c01_guillemin_core", "Different time periods", "g27_2.txt"),
+        ("c07_sameperiod", "The same time period", "g27_2.txt"),
+    ]
+    written: dict[str, tuple[str, str]] = {}
+    for case, repeat_mode, repeat_file in cases:
+        cfg_dir = tmp_path / case
+        cfg_dir.mkdir()
+        _bundle_g27_1(cfg_dir)
+        _bundle_g27_2(cfg_dir)
+        src_cfg = (
+            Path(__file__).resolve().parent
+            / "golden" / "java_configs" / f"{case}.txt"
+        )
+        text = src_cfg.read_text(encoding="utf-8")
+        text = _replace_tab_field(text, "Data_File", "g27_1.txt")
+        text = _replace_tab_field(text, "Repeat_Data_Files(comma delimited list)", repeat_file)
+        text = _replace_tab_field(
+            text,
+            "Repeat_Data_is_from[Different time periods,The same time period]",
+            repeat_mode,
+        )
+        cfg = cfg_dir / f"{case}.txt"
+        cfg.write_text(text, encoding="utf-8")
+        out_dir = cfg_dir / "out"
+        rc, _, stderr = _run_cli_through_subprocess(cfg, out_dir, tmp_path=tmp_path)
+        assert rc == 0, f"CLI failed for {case}: stderr={stderr}"
+        g = (out_dir / f"{case}_genetable.txt").read_bytes()
+        p = (out_dir / f"{case}_profiletable.txt").read_bytes()
+        written[case] = (hashlib.sha256(g).hexdigest(), hashlib.sha256(p).hexdigest())
+
+    # All three pairs must be distinct.
+    assert written["c08_norepeat"] != written["c01_guillemin_core"]
+    assert written["c08_norepeat"] != written["c07_sameperiod"]
+    assert written["c01_guillemin_core"] != written["c07_sameperiod"]
+
