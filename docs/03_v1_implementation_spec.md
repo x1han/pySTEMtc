@@ -431,6 +431,130 @@ engine.fit(...) ─► result.input["probe_header"], result.input["gene_header"]
 
 `GeneTable` 内部数据结构**不重复**存 header（P1-A 决定）——writer 直接走 `result.input` 即可；`GeneTable` 与 `SpotSet` 在 builder 链上的 header 来源相同（path 入口走 `main.probe_header/gene_header`，DataFrame 走 builder 默认），不会发生漂移。
 
+### 1.12 真实数据 benchmark（round-7.4 实测落地）
+
+**最高原则（round-7.4 冷冻，user 团 2026-09-20）**：
+- 真实 benchmark 与现有两套体系**分开**：
+  - `tests/golden/` → 已知 fixture 结果与 Java 一致。
+  - `benchmarks/benchmark_core.py` → 合成数据，研究规模/路径。
+  - `benchmarks/benchmark_real.py` → 真实数据，研究现实工作负载。
+- **不修改真实数据**来迎合 benchmark（不删时间点/改 perm/改 cap）。
+- **同一 dataset + 同一套参数**：Java STEM v1.3.14 + PySTEMTC 并排跑——**先验结果一致（A/C1），再谈性能**。
+- **不设性能合格线**——先 baseline。
+
+**目录约定**：
+- 真实数据**仓库外**：`D:\stem\benchmark_data\<id>\main.txt`（不入 git）。
+- benchmark 脚本：`benchmarks/benchmark_real.py` + `benchmarks/real_manifest.example.yaml`。
+- benchmark 结果：`benchmarks/results/real/<UTC-timestamp>_real/` 子目录。
+- `D:\stem\testdata\stem.testdata.tsv`（user 提供的真实数据，round-7.4 dry-run）：
+
+  ```
+  1999 genes × 60 T (Brain, ENSG-Mus-musculus 多发育阶段)
+  raw scale (0–8570), missing 0%, zero 11.57%
+  ```
+
+  → 预处理 R1（Brain trajectory T=7：8W → E10.5 → E12.5 → E14.5 → E16.5 → P0 → P21，丢 gene_id 留 gene_name）→ `D:\stem\benchmark_data\R1\main.txt`（164 KB）。
+
+**Round-7.4 dry-run 实测结果**（2026-09-20，参数：`log normalize` + `max_missing=1` + `min_abs_expr=0.5` + `n_permutations=50` + `permute_t0=True` + `correction=bonferroni` + `max_model_profiles=50` + `max_unit_change=2` + `spot_included=False`）：
+
+| 指标 | PySTEMTC | Java STEM v1.3.14 |
+|---|---|---|
+| wall | 2.13 s | 待 harness 测（headless `-b` 模式实测 16.x s，待验证） |
+| input spots | 1999 | 1999 |
+| retained genes | 1631/1999 (81.6%) | 1631/1999 (81.6%) |
+| model profiles | 50 | 50 |
+| permutation_mode | `subsample_universe` (5⁶=15,625 < 1M) | 同 (enumerable set) |
+| **Compatibility A** | 1631/1631 exact, 0 mismatch | — |
+
+**Java headless 调用契约**（user 必须遵守 + harness 必须执行）：
+- **批量模式**：`java -cp D:\stem\stem.jar edu.cmu.cs.sb.stem.ST -b <inputDir> <outputDir>`（args=3，每个 config 生成 `<config_basename>_genetable.txt` + `_profiletable.txt`）。
+- **单跑模式**：`java -cp D:\stem\stem.jar edu.cmu.cs.sb.stem.ST -d <cfg.txt> -o <out_prefix>`（args=4，**`-d` 必须在 `-o` 之前**）。`-d` 单独不带 `-o` 会触发 GUI 弹窗，harness 必须避开。
+- 字符集：Java 输出 GBK + CRLF（Windows JRE 1.8.0_451 canonical）——Python 端必须 `encoding="gbk"` 才能 decoded-content / byte-exact 比对。
+
+**Manifest YAML schema**（锁死）：
+
+```yaml
+id: R1_my_timecourse                   # dataset identifier
+main: D:/stem/benchmark_data/R1/main.txt
+replicates: []                         # list of repeat file paths
+config:                                # STEM algorithm parameters
+  normalize: log                       # log | normalize | none_add0
+  max_unit_change: 2
+  max_model_profiles: 50
+  max_correlation: 1.0
+  candidate_cap: 1000000
+  n_permutations: 50
+  permute_t0: true
+  correction: bonferroni               # bonferroni | fdr | none
+  max_missing: 0
+  min_abs_expr: 1.0
+  repeat_mode: different_periods       # different_periods | same_period
+  spot_included: true
+  clustering_method: stem              # stem | kmeans
+description:
+  organism: optional
+  assay: optional
+  source: private
+```
+
+**Subprocess isolation discipline**（user 团 P6）：
+- Python：每次 run 重启进程（不复用 import cache）。
+- Java：fresh JVM per run（不开常驻）。
+- warmup=1, formal=3, 报 **median / min / max**（不报 mean）。
+
+**Result schema**（runs.csv 列，与 `benchmark_core.py` 平行但扩展）：
+```
+dataset_id, run, kind, language,                    # language = "python" | "java"
+spots, time_points, repeat_files,
+genes_input, missing_rate, genes_after_dedup, genes_after_repeat_filter,
+genes_after_missing_filter, genes_after_threshold_filter, final_retained_genes,
+profiles, n_perms, permutation_mode,
+wall_s, peak_rss_mib, exit_code,
+stage_input_read_s, stage_normalize_filter_s, stage_profile_generation_s,
+stage_assignment_s, stage_permutation_s, stage_significance_s, stage_clustering_s,
+pystemtc_version, git_commit, python, numpy, pandas, platform,
+cpu_model, logical_cpu_count, ram_gib, os_release, java_version, java_vm
+```
+- Python 行：全部 stage_* + wall + peak RSS 全有。
+- Java 行：stage_* 全空（Java 不报 stage timing——只报 wall + peak RSS + exit_code，不假装 Java 有 stage timer）。
+
+**End-to-end wall vs Core wall**（user 团 P6）：
+- **end-to-end wall**：进程启动 → 读文件 → 分析 → 写输出 → 退出。
+- **core wall**：PySTEMTC `engine.fit()` 内部（PySTEMTC 才能报；Java 不构造）。
+- 不混。
+
+**Java 子进程 peak RSS**（Windows，user 团 P6 实证需求）：
+- `ctypes.OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ)` + `psapi.GetProcessMemoryInfo` + `PeakWorkingSetSize`。
+- **注意**：父进程 `Psapi.GetProcessMemoryInfo` 拿的是**父进程自己**的 peak——子进程 peak 必须 `OpenProcess(pid)` 后再读。
+- Linux：`os.wait4()` + `resource.getrusage(RUSAGE_CHILDREN).ru_maxrss * 1024`。
+- 平台不支持时抛 `OSError`，不假装。
+
+**Dataset profile schema**（dataset_profile.csv，每个 dataset 一行）：
+```
+dataset_id, spots, time_points, repeat_files, missing_rate,
+zero_rate, value_min, value_max, value_median,
+genes_after_dedup, genes_after_repeat_filter, genes_after_missing_filter,
+genes_after_threshold_filter, final_retained_genes
+```
+
+**主表（summary.md template）**：
+
+```
+| Dataset |  T | Reps | Retained genes | Profiles | Perm mode  | Java wall | Py wall | Py/Java | Py RSS | A exact | C1 exact |
+```
+**第一列判据**（user 团 P8）：A exact + C1 exact。**Py/Java >1 是描述，不是发布成败**。
+
+**Round-7.4 实施范围**（本轮严格只做）：
+1. `benchmarks/benchmark_real.py`（独立 harness，沿用 `benchmark_core.py` 的 subprocess 协议 + JSON stdout 模式）。
+2. `benchmarks/real_manifest.example.yaml`。
+3. `benchmarks/results/real/` 子目录占位。
+4. R1 dry-run 跑通（`D:\stem\benchmark_data\R1\` 已预处理），记录 Compatibility A 实证（已验：1631/1631 exact）。
+5. 不动 `benchmark_core.py`、不动 `test_golden.py`、不动 src/ 算法代码。
+
+**Round-7.4 不做**（推迟到 user 提供 R2/R3 + 公开数据 round）：
+- R2（repeats）/ R3（复杂短序列）数据集——待 user 提供。
+- 公开可复现数据集——V1.0 发布文档 round 再考虑。
+- 性能优化——baseline only。
 
 ## 2. 解冻区（unfrozen，按第 6 轮专家裁决重整，2026-09-19）
 

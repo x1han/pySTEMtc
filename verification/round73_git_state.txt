@@ -1,0 +1,3 @@
+967f9d4 docs(round-7.3): spec §1.10 'P1-3 + P1-5' numbering ambiguity → drop dangling P1-5 ref
+871b310 fix(round-7.3): writer contract sweep — genetable missing rule, profiletable formatter matrix, C2 GBK+CRLF, custom_header Java oracle
+990a705 docs: refresh round-7.2 verification artifacts (pytest log, git state, full diff)

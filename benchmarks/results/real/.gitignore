@@ -1,0 +1,4 @@
+# Real benchmark results are regenerable; keep only the dir placeholder out of git.
+# Use `git add -f benchmarks/results/real/<UTCts>_real/` to force-add a specific run.
+*
+!.gitignore

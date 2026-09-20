@@ -8,7 +8,15 @@
 (c) **P1-3 修正** C2 byte-exact 必须 pin 目标 oracle 的 encoding+newline——当前 canonical = **GBK + CRLF**（不是 UTF-8 + LF）；`U+FFFD` 在 GBK 输出下 JRE 1.8.0_451 + jjs Nashorn 实测（6 路径全 = `?` (0x3F)），Python `open(..., encoding="gbk", errors="replace")` 同样 emit `?`，必须 `errors="replace"`。
 (d) **P1-4 新建** custom_header Java oracle fixture——`java -cp D:\stem\stem.jar edu.cmu.cs.sb.stem.ST -b` 跑生成期 config（`/d/stem/tmp_gs_throw/cfg/headers_custom.txt`，**未**放到 `java_configs/` 因 `test_golden.ALL_CASES` 自动 glob 会触发 3 个失败测试）→ `tests/golden/java_reference/headers_custom/headers_custom_genetable.txt` (137 B ASCII CRLF) + `headers_custom_profiletable.txt` (51 行 ASCII CRLF)；表头实证 `SYMBOL_X \t Probe_ID \t Profile \t 0 \t 0h \t 1h \t 2h` 验证 Java 固定列 swap（gene-left/probe-right + t0 fixed 注入 `"0"`）。
 (e) **解冻区**：`prefix=None + path → Path(data_file).stem` 标注为 Python API 便利不属 C 文件名保证；tie profile `";".join(str(x) for x in gene.profile_ids)` 按 result 已有顺序输出（删 line 329 旧 "profile_ids 升序" 矛盾文本）。
-(f) pre-work reviewer subagent **REVIEW: APPROVE**，6 个 P3 polish items 全部吸收。**147/147 测试通过**（fixture 文件新增，未触及现有测试）。**writer 本身 0 代码改动**；test wiring 留待 writer 实现 round（本轮非阻断）。
+(f) pre-work reviewer subagent **REVIEW: APPROVE**，6 个 P3 polish items 全部吸收。**147/147 测试通过**（fixture 文件新增，未触及现有测试）。**writer 本身 0 代码改动**；test wiring 留待 writer 实现 round（本轮非阻断）。**round-7.4 收口注记（2026-09-20）**：本轮实现真实数据 benchmark harness（**不**继续扩 `benchmark_core.py`）——新建独立 `benchmarks/benchmark_real.py` + `benchmarks/real_manifest.example.yaml`：
+(a) **生态有效性第一原则**：user 团 2026-09-20 裁决"同一份真实数据 + 同一套参数，并排跑 Java STEM v1.3.14 + PySTEMTC，先验结果一致性（Compatibility A/C1），再谈性能"——第一列判据是 A exact + C1 exact，**不是 Py/Java ratio**。
+(b) **R1 真实数据落地**：user 提供 `D:\stem\testdata\stem.testdata.tsv`（1999 × 60 mouse brain multi-stage，raw scale，0% missing，11.57% zero）→ 预处理取 Brain trajectory T=7 (8W→E10.5→E12.5→E14.5→E16.5→P0→P21) → `D:\stem\benchmark_data\R1\main.txt` (164 KB)。manifest 在 `D:\stem\benchmark_data\R1\manifest.yaml`。
+(c) **R1 dry-run 实测**（formal=1）：PySTEMTC 2.06 s wall / 86.8 MiB RSS / 50 profiles / 1631 retained；Java STEM v1.3.14 2.53 s wall / **13.6 MiB child peak RSS** (Psapi OpenProcess + GetProcessMemoryInfo 实证) / exit=0 / 1631 retained；**Compatibility A: 1631/1631 exact, 0 mismatch (PASS)**。
+(d) **harness 设计**：warmup=1, formal=3, median + min + max (不报 mean) — 与 `benchmark_core.py` 一致；Py 行报全部 7 个 stage_* + wall + RSS；Java 行 wall + RSS + exit_code 全有但 stage_* 全空（Java 不报 stage timer——不假装）；dataset profile CSV 独立报 spots/T/reps/missing/zero/value range/value median 让"同样 20k rows 但保留 4k vs 18k"能被直接看到。
+(e) **Java headless 契约**：单跑必须 `-d <cfg> -o <out>` (4 args，-d 在 -o 前)；批跑 `-b <indir> <outdir>` (3 args)；`-d` 单独 (2 args) **会触发 GUI 弹窗**——harness 默认走 batch 模式避开此陷阱。
+(f) **目录约定**：真实数据仓库外 (`D:\stem\benchmark_data\`)，不进 git；manifest YAML schema 锁死；`D:\stem\testdata\` 仓库外不入仓。
+(g) **不做**：R2 (repeats) / R3 (复杂短序列) 等 user 提供更多真实数据后再补；公开可复现数据推迟到 V1.0 发布文档 round；性能优化——baseline only，不设合格线。
+(h) 147/147 测试仍绿。`benchmark_core.py` / `test_golden.py` / src/ 零触动。
 
 ---
 

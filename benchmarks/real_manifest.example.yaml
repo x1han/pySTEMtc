@@ -1,0 +1,43 @@
+# Real-data manifest template for benchmarks/benchmark_real.py (round-7.4).
+#
+# One YAML file = one dataset. The script reads ``main``, ``replicates``,
+# ``config`` (algorithm parameters), and ``description`` (free-form metadata).
+# Schema is locked at docs/03 §1.12 (round-7.4).
+#
+# Data files live OUTSIDE the repository (under D:/stem/benchmark_data/) so
+# private/proprietary data does not enter version control. The benchmark
+# script copies Java's genetable/profiletable into
+# benchmarks/results/real/<UTCts>_real/ for archival.
+#
+# Run with:
+#   python benchmarks/benchmark_real.py --manifest D:/stem/benchmark_data/<id>/manifest.yaml
+
+id: R1_my_timecourse
+main: D:/stem/benchmark_data/R1/main.txt
+replicates:
+  # - D:/stem/benchmark_data/R1/rep1.txt
+  # - D:/stem/benchmark_data/R1/rep2.txt
+
+config:
+  # normalize: log | normalize | none_add0
+  normalize: log
+  max_unit_change: 2
+  max_model_profiles: 50
+  max_correlation: 1.0
+  candidate_cap: 1000000
+  n_permutations: 50
+  permute_t0: true
+  # correction: bonferroni | fdr | none
+  correction: bonferroni
+  max_missing: 0
+  min_abs_expr: 1.0
+  # repeat_mode: different_periods | same_period
+  repeat_mode: different_periods
+  spot_included: true
+  # clustering_method: stem | kmeans
+  clustering_method: stem
+
+description:
+  organism: optional
+  assay: optional
+  source: private
