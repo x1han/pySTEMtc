@@ -27,7 +27,7 @@ trajectory.
 ## Install
 
 ```bash
-pip install pystemtc-0.1.0-py3-none-any.whl
+pip install pystemtc-1.0.0-py3-none-any.whl
 ```
 
 The wheel installs a single console script `pystemtc`.

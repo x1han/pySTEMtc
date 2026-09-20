@@ -188,17 +188,17 @@ as a byte-exact oracle for that branch).
 - `70d0520` docs(round-FINAL): expert review request for V1 byte-exact + CLI + M5.
 - The FIN-B hotfix commit (this round) closes the P0 wiring bug.
 
-## Clean-install smoke evidence (FIN-B)
+## Clean-install smoke evidence (FIN-B + release closeout)
 
 Captured to `final_acceptance/R1_brain_trajectory/_smoke/clean_install_smoke.log`:
 
 ```
-wheel: dist/pystemtc-0.1.0-py3-none-any.whl
+wheel: dist/pystemtc-1.0.0-py3-none-any.whl
   size = 63 628 B
   sha256 = 58aa228136532a43ac952a25643f89ca9bc93e6160db6d264ebfb023e69ccb9d
 
 fresh venv: /tmp/pystemtc_smoke_venv
-  pip install pystemtc-0.1.0-py3-none-any.whl numpy pandas
+  pip install pystemtc-1.0.0-py3-none-any.whl numpy pandas
   pystemtc run c01  (different-period repeat) -> exit 0
   pystemtc run c07  (same-period repeat)      -> exit 0
   pystemtc run R1   (Brain 7, no repeat)      -> exit 0
@@ -212,8 +212,24 @@ byte-exact vs Java oracle (from outside repo at /c/tmp/fin_b_smoke):
   R1  Brain 7 profiletable          : smoke == java  (   3 364 B ==   3 364 B)
 ```
 
-Wheel is also preserved at `final_acceptance/R1_brain_trajectory/_wheel/pystemtc-0.1.0-py3-none-any.whl`
+Wheel is also preserved at `final_acceptance/R1_brain_trajectory/_wheel/pystemtc-1.0.0-py3-none-any.whl`
 for delivery inspection.
+
+## Release closeout (v1.0.0 prep)
+
+- Package version: `1.0.0` (was `0.1.0`; sync with `pyproject.toml`,
+  `src/pystemtc/__init__.py:__version__`, and the wheel filename).
+- M5 frozen literal restored without the FIN-B `M5: ` prefix:
+  ```
+  normalize='none_add0' with permute_t0=True permutes the synthetic zero
+  baseline together with observed time points, matching legacy STEM
+  v1.3.14 behavior. Interpret permutation-based significance with caution.
+  ```
+  See `pystemtc.engine.M5_WARNING` and
+  `tests/test_m5_warning.py::test_m5_warning_text_is_the_frozen_constant`.
+- `.gitignore` extended with `benchmarks/results/` (timestamp-named
+  runtime outputs).  `git status --porcelain` is empty after the
+  release-closeout commit.
 
 ## Out of V1 scope (will not be added)
 

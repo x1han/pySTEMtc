@@ -69,12 +69,15 @@ def test_m5_warning_text_is_the_frozen_constant() -> None:
     Contract-cleanup test: even if someone changes the warning text in
     ``pystemtc/engine.py``, this assertion fails (full equality, not
     fragment match) and the contributor sees both halves diverged.
+
+    The literal here is the round-7.7 frozen text verbatim, with no
+    "M5: " prefix (release-closeout restore).
     """
     assert M5_WARNING == (
-        "M5: normalize='none_add0' with permute_t0=True permutes the "
-        "synthetic zero baseline together with observed time points, "
-        "matching legacy STEM v1.3.14 behavior. Interpret "
-        "permutation-based significance with caution."
+        "normalize='none_add0' with permute_t0=True permutes the synthetic "
+        "zero baseline together with observed time points, matching legacy "
+        "STEM v1.3.14 behavior. Interpret permutation-based significance "
+        "with caution."
     )
 
 

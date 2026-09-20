@@ -1,3 +1,10 @@
+=== pystemtc version ===
+usage: pystemtc [-h] {run,batch} ...
+
+pySTEMTC V1 -- headless STEM v1.3.14 clustering. Run a single config (run) or
+every config in a directory (batch).
+
+
 === c01 different-period repeat ===
 c01_out\c01_genetable.txt
 c01_out\c01_profiletable.txt

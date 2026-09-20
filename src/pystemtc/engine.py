@@ -35,18 +35,19 @@ from .result import GeneAssignment, ProfileRecord, STEMResult
 from .significance import correct, count_pvalue
 
 
-# M5 warning (FINAL-A A5, contract-cleanup FIN-B hotfix):
+# M5 warning (FINAL-A A5, contract-cleanup FIN-B hotfix, release-closeout restore):
 # FROZEN single source of truth for the warning text emitted when
 # ``normalize='none_add0'`` is combined with ``permute_t0=True``.
 # The text is referenced both by the engine (via warnings.warn) and by
 # tests/test_m5_warning.py (via equality assertion) so the contract
-# cannot drift between the two halves.  Changing this string is a
-# contract break for downstream tooling that may grep on it.
+# cannot drift between the two halves.  The text is the round-7.7
+# frozen literal verbatim -- no "M5: " prefix.  Changing this string
+# is a contract break for downstream tooling that may grep on it.
 M5_WARNING = (
-    "M5: normalize='none_add0' with permute_t0=True permutes the "
-    "synthetic zero baseline together with observed time points, "
-    "matching legacy STEM v1.3.14 behavior. Interpret "
-    "permutation-based significance with caution."
+    "normalize='none_add0' with permute_t0=True permutes the synthetic "
+    "zero baseline together with observed time points, matching legacy "
+    "STEM v1.3.14 behavior. Interpret permutation-based significance "
+    "with caution."
 )
 
 

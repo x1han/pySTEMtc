@@ -23,11 +23,13 @@ CLI surface frozen, M5 warning frozen via single source of truth,
 (outside the repo) is byte-exact with the Java oracles on all three
 cases.  Git tree clean.
 
-**Frozen words (FIN-B acceptance)**:
+**Frozen words (FIN-B + release closeout)**:
 
 ```
 pySTEMTC algorithm development: FROZEN
 Ready for real time-course datasets: YES
+Package version: 1.0.0
+Tag: v1.0.0  (HELD until GitHub Win/Linux CI green)
 ```
 
 ## What changed since the first review request
@@ -113,3 +115,18 @@ No algorithm changes.  No new features.  No refactor.
 - Re-run the clean-install smoke.  The byte-exact comparison is in
   the smoke log and the README.
 - Audit engine.py / result.py for performance (V1 has no perf gate).
+
+## Release closeout (v1.0.0 prep)
+
+Four release blockers were surfaced after the FIN-B hotfix; all four
+are now resolved in the release-closeout commit:
+
+| blocker | resolution |
+|---|---|
+| Package version mismatch (`0.1.0` wheel, `1.0.0` tag would be wrong) | `pyproject.toml` + `__init__.py:__version__` bumped to `1.0.0`; wheel rebuilt as `pystemtc-1.0.0-py3-none-any.whl`. |
+| M5 contract: FIN-B hotfix added an unauthorized `M5: ` prefix to the round-7.7 frozen literal | `M5_WARNING` reverted to the round-7.7 frozen text verbatim (no `M5: ` prefix); `test_m5_warning_text_is_the_frozen_constant` updated to match (still asserts full equality). |
+| Working tree not actually clean (`benchmarks/results/` untracked dirs; `verification/git_state.txt` stale content) | `.gitignore` extended with `benchmarks/results/` (timestamp-named runtime outputs).  `git status --porcelain` empty after the release-closeout commit. |
+| GitHub Win/Linux CI gate (release blocker) | Workflow already present (Win + Linux x Python 3.11/3.12/3.14, `pip install -e ".[dev]"`, `pytest -q`).  Release-closeout commit pushed; CI must be observed green before tagging `v1.0.0`. |
+
+No algorithm changes in the release closeout.  No new features.
+No refactor.

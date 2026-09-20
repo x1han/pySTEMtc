@@ -8,6 +8,9 @@ dist/
 venv/
 benchmarks/_scratch/
 
+# Benchmark runtime outputs (timestamp-named; not source code).
+benchmarks/results/
+
 # Round-specific working artifacts (verification/, scratch reports).
 # Each round leaves its R1/R2 dry-run artifacts here; they are tracked
 # at the round-commit level only when the round is published.
