@@ -1,20 +1,32 @@
 """Structured result object for a completed STEM run (spec 02 §B3; to_dict
 schema v2 per spec 03 §1.10).
 
-Java-shaped output tables (``write_java_tables``) are deferred to the M4
-writer round; :meth:`STEMResult.to_dict` provides the schema-v2
-JSON-compatible snapshot.  ``gene_assignments`` ``values`` there is a
-lossless snapshot of the Java gene-matrix content (merged medians + the
-all-missing cells' fill payloads); the future writer consumes the internal
-floats of :class:`STEMResult` directly.
+Java-shaped output tables are written by :meth:`STEMResult.write_java_tables`
+(M4 writer round; round-7.3 contract).
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import IO
 
 from . import __version__
+from .javaformat import format_java_double, java_double_to_string, double_to_sz
+
+# Writer discipline (round-7.3, pinned):
+# - raw LF line terminators (``\n``); comparison is decoded-exact (C1), not
+#   byte-exact (C2), so CRLF translation is not attempted.  Byte oracle
+#   assets under ``tests/golden/java_reference/**`` stay CRLF for archive
+#   fidelity, but new writer output is LF.
+# - UTF-8 encoding with ``errors='replace'``; the writer does NOT expose the
+#   errors= parameter.  Java's default Windows file.encoding (GBK on this
+#   system) maps ``-∞`` to the two-byte sequence ``\xA1\xDE`` and ``NaN`` to
+#   ``?``, so byte-exact comparison against the reference fails on the
+#   c14_log_missing row regardless; acceptance is at C1 decoded-exact
+#   level for c14, and C2 byte-exact for all other rows.
+LINE_TERMINATOR = "\n"
 
 # Algorithm-parameter keys of STEMConfig (config.py) — every field except the
 # two I/O keys ``data_file``/``repeat_files``, which belong to the ``input``
@@ -204,3 +216,164 @@ class STEMResult:
             ],
             "timing": dict(self.timing),
         }
+
+    # ------------------------------------------------------------------
+    # Java-shaped output (round-7.3 writer contract, round-8 implementation)
+    # ------------------------------------------------------------------
+
+    def _open_writer(
+        self,
+        path: Path,
+        encoding: str | None,
+        newline: str | None,
+    ) -> IO[str]:
+        """Open a writer for one table.
+
+        ``encoding`` and ``newline`` flow through to :func:`open`; pass
+        ``None`` to use the platform default (Java's behavior on this
+        host).  ``errors="replace"`` is pinned internally -- the writer
+        API does not expose this parameter.
+
+        Line discipline: this method writes :data:`LINE_TERMINATOR`
+        (``"\\n"``) at the end of every row; the ``newline`` parameter
+        passed to :func:`open` is what performs any LF-to-CRLF
+        translation.  We deliberately NEVER concatenate
+        ``line + newline`` in user code: doing both would produce
+        ``\\r\\r\\n`` (round-7.7 P1-3 fix).
+        """
+        return path.open("w", encoding=encoding, errors="replace", newline=newline)
+
+    def _write_genetable(
+        self, path: Path, encoding: str | None, newline: str | None,
+    ) -> None:
+        """Write the Java-shaped genetable (ST.java:2985-3036).
+
+        Header columns: ``<gene_header>\\t<probe_header>\\tProfile`` then the
+        time-point labels from ``result.input['time_points']`` verbatim --
+        NO self-injected ``"0"`` column (the user's t0 reference value is
+        already in the matrix at index 0; the gene-header+profile+time
+        columns are exactly ``numcols + 3`` total fields).
+
+        Per-cell rule (Java loop):
+          - ``j < T-1`` AND ``not present[j]`` -> emit the empty string
+            between tabs (cell rendered blank)
+          - otherwise emit ``format_java_double(value[j])``
+
+        The LAST column (``j == T-1``) is always rendered (Java's
+        ``pw.println(... +nf2.format(...))`` after the conditional loop),
+        even when ``present[T-1] == False``.
+        """
+        gene_header: str = self.input.get("gene_header", "Gene Symbol")
+        probe_header: str = self.input.get("probe_header", "SPOT")
+        time_points: list[str] = list(self.input.get("time_points", []))
+        T: int = len(time_points)
+
+        with self._open_writer(path, encoding, newline) as fh:
+            # Header line
+            fh.write(gene_header)
+            fh.write("\t")
+            fh.write(probe_header)
+            fh.write("\tProfile")
+            for label in time_points:
+                fh.write("\t")
+                fh.write(label)
+            fh.write(LINE_TERMINATOR)
+            # Data rows
+            for g in self.gene_assignments:
+                fh.write(g.gene)
+                fh.write("\t")
+                fh.write(g.probe)
+                fh.write("\t")
+                profile_ids = g.profile_ids
+                if profile_ids:
+                    fh.write(str(profile_ids[0]))
+                    for pid in profile_ids[1:]:
+                        fh.write(";")
+                        fh.write(str(pid))
+                for j in range(T):
+                    fh.write("\t")
+                    if j < T - 1 and not g.present[j]:
+                        # missing cell -- Java prints empty between tabs
+                        continue
+                    fh.write(format_java_double(g.values[j]))
+                fh.write(LINE_TERMINATOR)
+
+    def _write_profiletable(
+        self, path: Path, encoding: str | None, newline: str | None,
+    ) -> None:
+        """Write the Java-shaped profile table (ST.java:2944-2977, non-kmeans).
+
+        Hardcoded 6-column header (the writer does not auto-detect k-means
+        mode -- Java's kmeans branch writes a different file with the
+        ``_kmeansclustertable.txt`` suffix; pystemtc does not currently
+        expose a kmeans pathway through the public API):
+
+          ``Profile ID\\tProfile Model\\tCluster (-1 non-significant)\\t
+          # Genes Assigned\\t# Gene Expected\\tp-value``
+
+        Per-row:
+          - Profile ID: integer ``p.id``
+          - Profile Model: ``java_double_to_string(model[0]),`` plus
+            ``,java_double_to_string(model[j])`` for j in 1..len-1 (the
+            Java default ``double -> String`` is used for model coords;
+            the genetable's NumberFormat-2 path is NOT used here).
+          - Cluster: ``p.cluster`` as int (Java prints ``-1`` for
+            non-significant).
+          - # Genes Assigned, # Gene Expected: ``java_double_to_string``
+            (raw Double.toString, not NumberFormat).
+          - p-value: ``double_to_sz`` (Util.doubleToSz path; see
+            :func:`pystemtc.javaformat.double_to_sz`).
+        """
+        with self._open_writer(path, encoding, newline) as fh:
+            fh.write("Profile ID\tProfile Model"
+                     "\tCluster (-1 non-significant)"
+                     "\t# Genes Assigned\t# Gene Expected\tp-value")
+            fh.write(LINE_TERMINATOR)
+            for p in self.profiles:
+                fh.write(str(p.id))
+                fh.write("\t")
+                model = p.model
+                if model:
+                    fh.write(java_double_to_string(model[0]))
+                    for m in model[1:]:
+                        fh.write(",")
+                        fh.write(java_double_to_string(m))
+                fh.write("\t")
+                fh.write(str(p.cluster))
+                fh.write("\t")
+                fh.write(java_double_to_string(p.n_assigned))
+                fh.write("\t")
+                fh.write(java_double_to_string(p.n_expected))
+                fh.write("\t")
+                fh.write(double_to_sz(p.p_value))
+                fh.write(LINE_TERMINATOR)
+
+    def write_java_tables(
+        self,
+        out_dir: str | Path,
+        *,
+        encoding: str | None = "utf-8",
+        newline: str | None = "",
+    ) -> list[str]:
+        """Write the Java-shaped genetable and profiletable to ``out_dir``.
+
+        ``encoding`` and ``newline`` are forwarded to :func:`open`.  The
+        defaults (``utf-8`` + raw ``\\n``) yield C1-decoded-exact
+        comparisons against the Java golden references
+        (``tests/golden/java_reference/**``); passing
+        ``encoding="gbk", newline="\\r\\n"`` reproduces Java's
+        Windows-default byte stream for C2 byte-exact comparison.
+
+        ``errors="replace"`` is pinned internally -- the API does not
+        expose this parameter (round-7.7 P2-3 ruling).
+
+        Returns the absolute string paths of the two written tables in
+        the order ``[genetable, profiletable]``.
+        """
+        out_path = Path(out_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
+        genetable_path = out_path / "genetable.txt"
+        profiletable_path = out_path / "profiletable.txt"
+        self._write_genetable(genetable_path, encoding, newline)
+        self._write_profiletable(profiletable_path, encoding, newline)
+        return [str(genetable_path), str(profiletable_path)]

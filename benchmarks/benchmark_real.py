@@ -35,7 +35,7 @@ Round-7.5 P1 fixes from expert review 2026-09-20:
 Round-7.5 解冻区:
 - dataset profile adds ``input_rows``, ``unique_gene_names``,
   ``duplicate_gene_rows``, ``raw_missing_rate``, ``zero_rate``,
-  ``nonpositive_rate``, ``input_sha256``, ``derivation_sha256``,
+  ``nonpositive_rate``, ``analysis_input_sha256``, ``source_sha256``,
   ``derivation_description``.
 - Java binary / stem.jar via CLI ``--java-bin`` / ``--stem-jar`` with
   env-var fallback then auto-discovery (NOT in manifest -- manifest is
@@ -122,9 +122,9 @@ def _profile_dataset(manifest: dict, dataset_id: str) -> dict:
     Round-7.5 expanded schema (per expert ruling 2026-09-20):
         input_rows, unique_gene_names, duplicate_gene_rows,
         T, reps,
-        raw_missing_rate, zero_rate, nonpositive_rate,   # nonpositive = effective missing under log mode
+        raw_missing_rate, zero_rate, nonpositive_rate,   # raw input cells with value <= 0; NOT pma missing
         value_min, value_max, value_median,
-        input_sha256, derivation_sha256, derivation_description,
+        analysis_input_sha256, source_sha256, derivation_description,
         + engine-side post-filter counts (filled after first run)
     """
     import hashlib
@@ -187,14 +187,13 @@ def _profile_dataset(manifest: dict, dataset_id: str) -> dict:
         "reps": len(manifest.get("replicates") or []),
         "raw_missing_rate": round(raw_missing / total_cells, 6) if total_cells else 0.0,
         "zero_rate": round(zeros / total_cells, 6) if total_cells else 0.0,
-        # Round-7.6 P1-BENCH semantics: nonpositive is NOT pma missing.
+        # Round-7.6 + round-7.7 final: nonpositive is NOT pma missing.
         # log mode maps v<=0 to non-finite payload (-Inf for v==0, NaN
         # for v<0); pma is set to 0 only when t0 itself was raw-missing
-        # (dataio's row-level cascade). We do NOT auto-compute an
-        # "effective missing rate" because it would require re-running
-        # normalization and counting pma zeros, which is the
-        # algorithm's responsibility (deferred until writer round
-        # integrates pma instrumentation).
+        # (dataio's row-level cascade). `effective_missing_rate` is NOT
+        # bound to the writer round -- if needed in the future it must
+        # come from explicit pipeline instrumentation, not derived from
+        # `nonpositive_rate`.
         "nonpositive_rate": round(nonpositive / total_cells, 6) if total_cells else 0.0,
         "value_min": round(min(values), 4) if values else 0.0,
         "value_max": round(max(values), 4) if values else 0.0,
@@ -674,7 +673,8 @@ CSV_FIELDS = (
     + ["final_retained_genes", "profiles", "n_perms", "permutation_mode"]
     + ["end_to_end_wall_s", "core_wall_s", "peak_rss_mib", "exit_code"]
     + [f"stage_{key}_s" for key in STAGE_KEYS]
-    + ["pystemtc_version", "git_commit", "python", "numpy", "pandas", "platform",
+    + ["pystemtc_version", "git_commit", "git_state", "git_diff_sha256",
+       "python", "numpy", "pandas", "platform",
        "cpu_model", "logical_cpu_count", "ram_gib", "os_release",
        "java_bin", "java_version", "stem_jar_path", "stem_jar_sha256"]
 )
@@ -749,6 +749,29 @@ def _git_commit() -> str:
         return "unknown"
 
 
+def _git_state(repo_root: Path) -> tuple[str, str]:
+    """Return ("clean" | "dirty" | "unknown", diff_sha256-or-empty).
+
+    Round-7.6 P1-6 + round-7.7 final P2-3: tri-state, never silently map
+    "unknown" to "clean" (that would falsify the official baseline gate;
+    see Round-7.6 P1-EVIDENCE pattern).
+    """
+    try:
+        out = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=str(repo_root),
+            capture_output=True, text=True, timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return "unknown", ""
+    if out.returncode != 0:
+        return "unknown", ""
+    diff = out.stdout.strip()
+    if not diff:
+        return "clean", ""
+    return "dirty", hashlib.sha256(diff.encode("utf-8")).hexdigest()
+
+
 def _csv_row(dataset_id: str, run_idx: int, kind: str, lang: str,
              profile: dict, payload: dict, env: dict) -> dict:
     summary = payload.get("summary", {})
@@ -779,6 +802,8 @@ def _csv_row(dataset_id: str, run_idx: int, kind: str, lang: str,
         "exit_code": payload["exit_code"],
         "pystemtc_version": env["pystemtc_version"],
         "git_commit": env["git_commit"],
+        "git_state": env.get("git_state", "unknown"),
+        "git_diff_sha256": env.get("git_diff_sha256", ""),
         "python": env["python"],
         "numpy": env["numpy"],
         "pandas": env["pandas"],
@@ -821,6 +846,9 @@ def _write_summary_md(out_dir: Path, dataset_id: str, profile: dict,
         f"# Real-data benchmark summary -- {dataset_id}",
         "",
         f"- generated: pySTEMTC {env['pystemtc_version']} @ {env['git_commit']}",
+        f"- git_state: **{env.get('git_state', 'unknown')}**"
+        + (f" (diff sha256 `{env.get('git_diff_sha256', '')[:16]}...`)"
+           if env.get('git_state') == 'dirty' else ""),
         f"- Python: {env['python']}, NumPy {env['numpy']}, pandas {env['pandas']}",
         f"- Java: {env['java_version']} (binary: `{env['java_bin']}`)",
         f"- stem.jar: `{env['stem_jar_path']}` (sha256 `{env['stem_jar_sha256'][:16]}...`)",
@@ -852,16 +880,15 @@ def _write_summary_md(out_dir: Path, dataset_id: str, profile: dict,
         f" {profile['nonpositive_rate']:.4f} | [{profile['value_min']}, {profile['value_max']}] |"
         f" {profile['value_median']} |",
         "",
-        "> **Round-7.6 P1-BENCH semantic fix**: `nonpositive_rate` is the "
+"> **Round-7.6 + round-7.7 final semantic fix**: `nonpositive_rate` is the "
         "share of raw cells with `value <= 0`. Under log mode these cells "
         "produce **non-finite payloads** (`-Inf` for `v == 0`, `NaN` for "
         "`v < 0`) per `_log_java` in `src/pystemtc/normalize.py:20-26`. They "
         "do **NOT** automatically become pma-missing -- pma is set to 0 "
-        "only when t0 itself was raw-missing (row-level cascade). We do not "
-        "auto-compute an `effective_missing_rate` here because that would "
-        "require running normalization and counting pma zeros, which is "
-        "the algorithm's responsibility (deferred until the writer round "
-        "adds pma instrumentation).",
+        "only when t0 itself was raw-missing (row-level cascade). "
+        "`effective_missing_rate` is NOT computed here. If needed in the future, "
+        "it must come from explicit pipeline instrumentation, NOT derived from "
+        "`nonpositive_rate`. This is NOT bound to the writer round.",
         "",
         "### Provenance (sha256, round-7.6 naming)",
         "",
@@ -917,7 +944,7 @@ def _write_summary_md(out_dir: Path, dataset_id: str, profile: dict,
         "produce a Python genetable / profiletable to byte-compare against the "
         "Java oracle. See docs/03 §1.10 (round-7.3 writer contract sweep).",
         "",
-        "## Main table -- end-to-end wall (parent subprocess timer, cross-language-comparable)",
+        "## Main table -- process-level wall (same timing protocol; workload not yet equivalent)",
         "",
         "| Language | wall median | wall min | wall max | RSS MiB median | exit_code |",
         "|---|---|---|---|---|---|",
@@ -1059,14 +1086,26 @@ def main() -> None:
     # produces a different profile_ids set, that's a real bug.
     determinism: dict = {"py_consistent": True, "java_consistent": True,
                           "py_diff_examples": [], "java_diff_examples": []}
+    # Round-7.6 + round-7.7 final: full key-set + ordered profile_ids comparison
+    # (must check retained gene sets match exactly, not just common genes).
     if len(py_payloads) >= 2:
         ref = py_payloads[0]["gene_assignments"]
+        ref_keys = set(ref.keys())
+        ref_lists = {g: list(ref[g]) for g in ref_keys}
         for k, p in enumerate(py_payloads[1:], start=2):
-            for g in ref:
-                if g in p["gene_assignments"] and list(p["gene_assignments"][g]) != list(ref[g]):
+            cur_keys = set(p["gene_assignments"].keys())
+            if cur_keys != ref_keys:
+                determinism["py_consistent"] = False
+                determinism["py_diff_examples"].append(
+                    ("keys", sorted(ref_keys - cur_keys), sorted(cur_keys - ref_keys))
+                )
+                break
+            for g in ref_keys:
+                cur = list(p["gene_assignments"][g])
+                if cur != ref_lists[g]:
                     determinism["py_consistent"] = False
                     determinism["py_diff_examples"].append(
-                        (k, g, list(ref[g]), list(p["gene_assignments"][g]))
+                        (k, g, ref_lists[g], cur)
                     )
                     if len(determinism["py_diff_examples"]) >= 3:
                         break
@@ -1074,17 +1113,41 @@ def main() -> None:
                 break
     if len(java_payloads) >= 2:
         ref = java_payloads[0]["gene_assignments"]
+        ref_keys = set(ref.keys())
+        ref_lists = {g: list(ref[g]) for g in ref_keys}
         for k, p in enumerate(java_payloads[1:], start=2):
-            for g in ref:
-                if g in p["gene_assignments"] and list(p["gene_assignments"][g]) != list(ref[g]):
+            cur_keys = set(p["gene_assignments"].keys())
+            if cur_keys != ref_keys:
+                determinism["java_consistent"] = False
+                determinism["java_diff_examples"].append(
+                    ("keys", sorted(ref_keys - cur_keys), sorted(cur_keys - ref_keys))
+                )
+                break
+            for g in ref_keys:
+                cur = list(p["gene_assignments"][g])
+                if cur != ref_lists[g]:
                     determinism["java_consistent"] = False
                     determinism["java_diff_examples"].append(
-                        (k, g, list(ref[g]), list(p["gene_assignments"][g]))
+                        (k, g, ref_lists[g], cur)
                     )
                     if len(determinism["java_diff_examples"]) >= 3:
                         break
             if not determinism["java_consistent"]:
                 break
+    # Round-7.6 + round-7.7 final: backfill final_retained_genes before
+    # writing dataset_profile.csv (was empty in the round-7.6 artifact).
+    if py_payloads:
+        summary_first = py_payloads[0].get("summary", {})
+        genes_retained = summary_first.get("genes_retained", "")
+        if genes_retained != "":
+            profile["final_retained_genes"] = genes_retained
+    # Round-7.6 + round-7.7 final: git_state tri-state gate.
+    # clean / dirty / unknown -- unknown must NOT silently map to clean.
+    git_state, git_diff_sha = _git_state(Path(__file__).resolve().parents[1])
+    profile["git_state"] = git_state
+    profile["git_diff_sha256"] = git_diff_sha
+    env["git_state"] = git_state
+    env["git_diff_sha256"] = git_diff_sha
     _write_summary_md(out_dir, dataset_id, profile, py_payloads, java_payloads,
                       consistency, determinism, env, args)
 

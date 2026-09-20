@@ -20,7 +20,7 @@ there.
 from __future__ import annotations
 
 import math
-from decimal import Decimal, ROUND_HALF_EVEN
+from decimal import Decimal, ROUND_HALF_EVEN, localcontext
 
 
 def java_double_to_string(d: float) -> str:
@@ -85,12 +85,70 @@ def java_double_to_string(d: float) -> str:
 
 def _number_format(value: float, fraction_digits: int) -> str:
     """``NumberFormat.getInstance(Locale.ENGLISH)`` with min = max fraction
-    digits (HALF_EVEN rounding on the exact binary double, thousands
-    grouping) — the same rendering rule M1's genetable comparison uses."""
-    quantized = Decimal(float(value)).quantize(
-        Decimal(1).scaleb(-fraction_digits), rounding=ROUND_HALF_EVEN
-    )
+    digits (HALF_EVEN rounding, thousands grouping).
+
+    Java's ``NumberFormat.format(double)`` uses two paths internally:
+
+    1. **Plain notation range** ``1e-3 <= |d| < 1e7``: rounds the binary
+       double directly (so ``2.675`` → ``2.67`` via HALF_EVEN on the
+       binary ``2.6749999999...``).
+    2. **Outside plain range**: parses ``Double.toString(d)`` as a Decimal
+       (scientific notation ``1.0E30`` etc.) and quantizes that exact
+       source — so ``1e30`` → ``1,000,000,000,000,000,000,000,000,000,000.00``
+       rather than the binary-rounded ``1,000,000,000,000,000,019,884,624,838,656.00``.
+
+    We dispatch on the same ``1e-3 <= |d| < 1e7`` plain-range check.
+    """
+    if 1e-3 <= abs(value) < 1e7:
+        source = float(value)            # binary path
+    else:
+        # E-notation path: parse the same string Java's NumberFormat would
+        # see (``"1.0E30"``-style). Python's ``repr(float)`` for |d|>=1e16
+        # yields ``1e+30`` (no decimal) which Decimal parses correctly as
+        # ``1e30`` -- and JRE8 NumberFormat quantizes that exact source
+        # to ``1,000,...000.00`` rather than the binary-rounded value.
+        source = repr(value)
+    with localcontext() as ctx:
+        ctx.prec = 1000
+        quantized = Decimal(source).quantize(
+            Decimal(1).scaleb(-fraction_digits), rounding=ROUND_HALF_EVEN
+        )
     return f"{quantized:,}"
+
+
+def format_java_double(value) -> str:
+    """``java.text.NumberFormat(Locale.ENGLISH)`` with min = max fraction
+    digits = 2 (ST.java:3017-3019), used for genetable value cells.
+
+    JDK 8 DecimalFormat renders:
+
+    - NaN as a single U+FFFD character (verified via jjs on JRE 1.8.0_451).
+    - +Inf / -Inf as U+221E / -U+221E.
+    - Finite doubles via ``_number_format`` (handles the plain vs
+      E-notation dispatch matching JDK's internal heuristic).
+
+    Verified cases (round-7.3 + round-8 Gate A JRE8 probe):
+
+    === small range (binary HALF_EVEN) ===
+    >>> format_java_double(2.675)        == '2.67'
+    >>> format_java_double(-0.0)          == '-0.00'
+    >>> format_java_double(999.995)      == '1,000.00'
+
+    === large finite (E-notation parse) ===
+    >>> format_java_double(1e30)         == '1,000,000,000,000,000,000,000,000,000,000.00'
+    >>> format_java_double(-1e30)        == '-1,000,000,000,000,000,000,000,000,000,000.00'
+    >>> format_java_double(1e100)        == '10,000,...(60 zeros),000.00'
+    >>> format_java_double(1e308)        == '100,000,...(99 zeros),000.00'
+
+    === non-finite ===
+    >>> format_java_double(float('nan')) == '\\ufffd'
+    >>> format_java_double(float('inf')) == '\\u221e'
+    """
+    if math.isnan(value):
+        return "\ufffd"
+    if math.isinf(value):
+        return "\u221E" if value > 0 else "-\u221E"
+    return _number_format(value, 2)
 
 
 def double_to_sz(dval: float) -> str:

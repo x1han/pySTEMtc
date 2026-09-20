@@ -7,3 +7,10 @@ dist/
 .venv/
 venv/
 benchmarks/_scratch/
+
+# Round-specific working artifacts (verification/, scratch reports).
+# Each round leaves its R1/R2 dry-run artifacts here; they are tracked
+# at the round-commit level only when the round is published.
+verification/
+docs/08_m4_round7_report.md
+docs/08_m4_round77_report.md
