@@ -35,8 +35,9 @@
   - `prefix` 显式 → 写入 `<prefix>_genetable.txt` / `<prefix>_profiletable.txt`（与 Java batch `<defaults文件名>_genetable.txt` 命名一致）。
   - `prefix=None` + `result.input["data_file"]` 是 path 字符串 → `prefix = Path(data_file).stem`（自动从来源推导）。
   - `prefix=None` + `result.input["form"] == "dataframe"` → 抛 `ValueError("write_java_tables: prefix required for DataFrame-built results; pass prefix= to specify the output basename.")`。**禁止悄悄用 data file stem 替代——会产生假兼容**。
-  - CLI 从 config 文件运行时：`prefix = config_path.stem`（自然对接）。
+  - CLI 从 config 文件运行时：`prefix = config_path.stem`（自然对接，与 Java batch `<defaults文件名>_genetable.txt` 命名一致）。
   - 字符集与行分隔符：`encoding` 参数（默认平台默认）；`newline` 参数（默认跟随 `open()` 平台默认）。C1 不受 encoding/newline 影响；C2 需要两者都显式 pin。
+  - **round-7.3 注释（不改变规则）**：`prefix=None + path → Path(data_file).stem` 是 Python API 便利命名，**不属于 Compatibility C 文件名保证**——C1/C2 比较的是文件**内容**，文件名只在显式 `prefix=` 或 CLI config 模式时才参与 Java batch 命名一致。
 - **原始 header 元数据钉死（第 7.2 轮，writer 前置 P1-2）**：`SpotSet` 与 `STEMDataset` 增 `probe_header: str` 与 `gene_header: str` 两个字段，path 入口 verbatim 保留（`read_stem_file` 一直解析但之前丢弃了）；DataFrame 入口默认 `"spot"` / `"gene"`（canonical Python header，writer 始终从 `result.input` 派生而非从 DataFrame-side 默认猜）。M4 writer 消费 `result.input["probe_header"]` / `result.input["gene_header"]` 写表头列名——表头来自原 Java-STEM 文件，**不硬编码** `Gene Symbol` / `SPOT`。新 fixture `tests/golden/headers/custom_header.txt`（Probe_ID / SYMBOL_X）钉这一行为。
 - **CLI 裁决（第 6 轮冻结）**：退出码 `0` 成功 / `1` 运行失败 / `2` 用法错误；`batch` 模式单配置失败**继续**处理其余配置，结束时以 stderr 汇总失败清单；stdout 保持**简洁成功摘要**（行数级镜像 Java batch，不做逐 gene 噪声输出）。
 - **M5 warning 冻结原文（第 6 轮冻结；第 5 轮 N9 定组合、第 6 轮定文案）**：仅 `none_add0 × permute_t0=True` 组合弹运行时 warning，**只 warn 一次**，文案冻结为："`normalize='none_add0'` with `permute_t0=True` permutes the synthetic zero baseline together with observed time points, matching legacy STEM v1.3.14 behavior. Interpret permutation-based significance with caution." legacy 有放回置换不逐次警告，由 metadata（`legacy_with_replacement`/`permutation_mode`）+ 文档承载；warning 只说明风险，不改计算结果。
@@ -303,7 +304,7 @@ cluster_profiles(sig, models, thr, percentile_thr) -> clusters   # 贪心球：�
 
 现居 `tests/test_integration_fixture.py` 的 `NumberFormat` 复刻（ENGLISH、2 位小数 HALF_EVEN、千分位、NaN→U+FFFD、±Inf→±∞）在 **writer 轮**晋升 `src/pystemtc/javaformat.py`（`write_java_tables` 的格式化内核），测试改为 import，行为不变。
 
-### `write_java_tables` writer 接口预写（round-7.2 第 8 轮实现目标，**本轮不实现**）
+### `write_java_tables` writer 接口预写（round-7.2 第 8 轮实现目标；round-7.3 完成合同清扫，**本轮不实现**）
 
 ```python
 # src/pystemtc/result.py
@@ -321,27 +322,100 @@ class STEMResult:
         """
 ```
 
-**C1 decoded-content exact 必须满足**（验收清单，详见 §0 冻结）：
-- 第一行表头 `<gene_header>\t<probe_header>\tProfile\t<t1>\t<t2>\t...\t<tT>`，其中 `<gene_header>` / `<probe_header>` 取自 `result.input["gene_header"]` / `result.input["probe_header"]`（verbatim path header）。
-- 每个 gene 行末列（最后一列 `<tT>`）**无条件渲染**——即使 present=False 也用 `format_java_double` 输出存储 double（Java 行为；c14 实证 `-∞`）。
-- 空缺格（finite+present=False 且 value 是填充值）→ `format_java_double` 输出；非 finite payload → 不强制空串（按存储值渲染）。
-- `-0.00` 的负零渲染：`(value, value_state, present)` 三维必须支持（schema v2 round-7.1 已提供）。
-- tie profile 顺序：`profile_ids` 升序以 `;` 分隔。
+**Genetable 列顺序 + 表头（round-7.3 P1-3 + P1-5 实证，ST.java:2989-2999 + DataSetCore.java:359-378）**：
+- 第一行表头 `<gene_header>\t<probe_header>\t<"Profile"|"Cluster">\t<t1>\t<t2>\t...\t<tT>`。
+  - `<gene_header>` / `<probe_header>` 取自 `result.input["gene_header"]` / `result.input["probe_header"]`（verbatim path header；DataFrame 入口为 canonical `"gene"` / `"spot"|"probe"`）。
+  - **Java 固定 swap：基因列在左、探针列在右**，即使 input 中 probe 在前（`Probe_ID SYMBOL_X 0h 1h 2h`）也写为 `<gene> \t <probe>`。
+  - 第三列是 `"Profile"`（STEM mode）或 `"Cluster"`（K-means mode，跟 `result.metadata["clustering_method"]` 走）。
+  - time-point 列名取自 `dsamplemins[]`（input header 尾部列）。t0 fixed 时 Java 注入 `"0"` 到 `dsamplemins[0]`（DataSetCore.java:386-388）。
+- 每个 gene 行 `<gene_name>\t<probe_names_with_semicolon>\t<profile_id>[;<id>...] \t <cell_0> \t ... \t <cell_{T-1}>`，基因名在左、探针名在右、Profile/Cluster 在第三列。
 
-**`format_java_double`（从 tests/test_integration_fixture.py 晋升）**：
+**Genetable missing 规则（round-7.3 P1-1 修正，Java ST.java:3021-3033 + c14 实证）**：
+```text
+对于时间列 j < T-1：
+    present=False → 无条件输出空字符串 ""
+    present=True  → format_java_double(stored_value)
+
+对于最后一列 j == T-1：
+    无视 present
+    → 无条件 format_java_double(stored_value)
+```
+- c14 实证：10 个空 cell 全在非末列；4 行末列 = `-∞`（GBK `A1 DE`）。
+- `test_golden.py:230-234` 已按此规则写——spec 现在与测试对齐。
+
+**Profiletable formatter 选择矩阵（round-7.3 P1-2 完整化，Java ST.java:2967-2975）**：
+| 列 | formatter | 备注 |
+|---|---|---|
+| Profile ID | `str(int)` | `pw.print(nprofile + "\t")` — 原始 int 拼接 |
+| Profile Model | `",".join(java_double_to_string(v) for v in model)` | 每元素 JDK `Double.toString`；逗号无空格 |
+| Cluster (-1 non-significant) | `str(int)` | `-1` = 非显著 |
+| # Genes Assigned | `java_double_to_string()` | **非约束说明**：Java 路径仅 `pw.print(double)`；Python `java_double_to_string` 对 `0.0`/`0.5` 等合法 |
+| # Gene Expected | `java_double_to_string()` | 同上 |
+| p-value | `double_to_sz()` | `Util.doubleToSz` 完整复刻（含 0.995 阈值循环 + E-notation 分支） |
+- **不复用 `format_java_double`**——profile table 用 `java_double_to_string` (Double.toString) + `double_to_sz`，不是 `NumberFormat` (2 decimals)。
+
+**Genetable 数值 formatter（format_java_double，从 tests 晋升）**：
 - `Decimal(float(value)).quantize(Decimal(1).scaleb(-2), rounding=ROUND_HALF_EVEN)` + 千分位 `,` 分隔。
-- `NaN` → U+FFFD；`±Inf` → ±∞（U+221E）；`-0.00` 走 Decimal 路径时可能渲染为 `0.00`（HALF_EVEN）——**writer 必须显式检测原值是否带负号**，保持 `-0.00` 字面。
+- `NaN` → `\uFFFD`（U+FFFD）；`±Inf` → `±\u221E`（U+221E）。
+- `-0.00` 负零保持：`format_java_double(-0.0) == "-0.00"`（HALF_EVEN + sign detection，javaformat._number_format 已隐式保持）。
+
+**Tie profile 顺序（round-7.3 解冻区，user 团 2026-09-20 钉死）**：
+```text
+";".join(str(x) for x in gene.profile_ids)
+按 result 已有的 profile_ids 顺序输出。**不重新 sort**——Compatibility A 已保证上游顺序与 Java 一致，writer sort 反而掩盖上游 bug。
+```
+（spec line 329 旧文本 "profile_ids 升序以 ; 分隔" **已删除**——与本规则矛盾。）
 
 **`prefix` 解析规则**（§0 writer API 冻结）：
 - `prefix` 显式 → verbatim。
-- `prefix=None` + `input.form == "path"` → `Path(input.data_file).stem`。
+- `prefix=None` + `input.form == "path"` → `Path(input.data_file).stem`（**Python API 便利，不属 C 文件名保证**；CLI 走 `config_path.stem` 才是 Java batch 命名一致路径）。
 - `prefix=None` + `input.form == "dataframe"` → `ValueError`。
 
-**`encoding` 与 `newline`**：
-- 默认行为：跟随 `open(output_dir/prefix+"_genetable.txt", "w", encoding=platform_default_encoding)`。
-- 显式 pin `encoding="utf-8"` + `newline="\n"` 才承诺 C2 byte-exact。
+**`encoding` 与 `newline`（round-7.3 P1-3 修正）**：
+- 默认行为：跟随 `open(output_dir/prefix+"_genetable.txt", "w", encoding=platform_default_encoding)`（镜像 Java 默认行为）。
+- C1 不受 encoding/newline 影响（按解码后字段判定）。
+- **C2 byte-exact 必须显式 pin 目标 Java oracle 实际使用的 encoding + line ending**——不是固定的 `utf-8 + \n`。
 
-**验收**：14 套 c01-c14 fixture + custom_header fixture 全部 C1 decoded-content exact；C2 byte-exact 在显式 pin encoding/newline 后比对 Java batch 输出。
+**当前 canonical Java oracle**（Windows JRE 1.8.0_451，本机生成）：
+```python
+encoding="gbk"
+newline="\r\n"
+```
+实证（`tests/golden/java_reference/c14_log_missing_genetable.txt`）：
+- 141 个 `\r\n`，0 个 lone `\n`。
+- `-∞` 字节 = `2D A1 DE`（GBK range；不是 UTF-8 `E2 88 9E`）。
+- `file` 命令判 ISO-8859（误判；A1 DE 在 GBK 字符集内）。
+
+**U+FFFD → ? (0x3F) 在 GBK 下的真实行为**（JRE 1.8.0_451 + jjs Nashorn 实测，6 路径全一致）：
+| 编码路径 | 写 `X<U+FFFD>Y` 的输出字节 |
+|---|---|
+| `getBytes()` (default = GBK) | `58 3F 59` = `X?Y` |
+| `getBytes("GBK")` strict | `58 3F 59` = `X?Y` |
+| `OutputStreamWriter` GBK strict | `58 3F 59` = `X?Y`（SUCCESS，不 throw） |
+| `OutputStreamWriter` GBK + REPLACE | `58 3F 59` = `X?Y` |
+| `PrintWriter("GBK")` | `58 3F 59` = `X?Y` |
+| `PrintWriter` default | `58 3F 59` = `X?Y` |
+
+JRE 8 GBK encoder 把 `U+FFFD` 当 malformed input 替换为 `?`——**永不 throw**。Python `open(..., encoding="gbk", errors="replace")` 写 `U+FFFD` 同样 emit `?` (0x3F)——必须 `errors="replace"` 才能 byte-exact。
+
+**Linux/UTF-8 oracle（如未来生成）**：
+```python
+encoding="utf-8"
+newline="\n"
+```
+- `U+FFFD` 在 UTF-8 下 bytes = `EF BF BD`，非替换。
+- `-∞` 在 UTF-8 下 bytes = `E2 88 9E`。
+
+**验收**：14 套 c01-c14 fixture + custom_header fixture（新增 headers_custom 子目录）全部 C1 decoded-content exact；C2 byte-exact 在显式 pin `encoding="gbk"` + `newline="\r\n"` 后比对 Java batch 输出。
+
+### Custom header Java oracle fixture（round-7.3 P1-4 落地）
+
+新增最小 Java batch fixture，端到端验证 non-default header（`Probe_ID SYMBOL_X 0h 1h 2h`）下的 genetable + profiletable 输出：
+- input：`tests/golden/headers/custom_header.txt`（round-7.2 已建，6 spots × 3 time points）。
+- **config 不放在 `java_configs/`**——`test_golden.py::ALL_CASES = sorted(p.stem for p in CONFIGS.glob("*.txt"))` 会自动发现并进入 3 个 test_golden 测试路径，但本轮不动 test_golden.py（writer 实现 round 才补 test wiring）。Config 原文留 `/d/stem/tmp_gs_throw/cfg/headers_custom.txt`（同 round-7.3 docs/08 dated 注记），需要再跑时手动复制。
+- Java oracle：`tests/golden/java_reference/headers_custom/headers_custom_genetable.txt`（137 B ASCII CRLF）+ `headers_custom_profiletable.txt`（51 行 ASCII CRLF）。两文件均为 Windows JRE 1.8.0_451 + `java -cp D:\stem\stem.jar edu.cmu.cs.sb.stem.ST -b` 跑出的真实输出（生成期 cwd = `D:\stem`）。
+- Java oracle 实证列顺序规则：表头 `SYMBOL_X \t Probe_ID \t Profile \t 0 \t 0h \t 1h \t 2h`（基因左、探针右 swap 已生效）+ time 列含 t0 fixed 注入的 `"0"` 列。
+- **test wiring 留待 writer 实现 round**（round-7.3 仅合同清扫，不动 test_golden；docs/08 dated 注记标记此 gap）。
 
 ### 原始 header 元数据链（round-7.2 P1-2 落地状态）
 
