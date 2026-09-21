@@ -203,7 +203,14 @@ def test_engine_tally_weights_and_result():
     assert len(result.profiles) > 1
     # every gene contributes exactly 1.0 in total (1/k over its ties)
     total = sum(p.n_assigned for p in result.profiles)
-    assert total == 3.0
+    # Use math.isclose / pytest.approx for cross-Python-version
+    # compatibility: Python 3.11's sum() can accumulate a single ULP
+    # (4e-15) over the 50-profile reduction here, while Python 3.12+
+    # uses Neumaier summation that lands on the exact value.  The
+    # algorithm contract is "every gene contributes exactly 1.0";
+    # 1e-9 absolute tolerance catches any real arithmetic bug while
+    # accepting the interpreter-level noise.
+    assert total == pytest.approx(3.0, abs=1e-9)
     # the flat gene B ties with EVERY profile -> fractional 1/k weights
     flat_row = next(g for g in result.gene_assignments if g.gene == "B")
     tied_ids = list(flat_row.profile_ids)
