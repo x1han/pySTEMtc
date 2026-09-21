@@ -271,7 +271,9 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="pystemtc",
         description=(
             "pySTEMTC V1 -- headless STEM v1.3.14 clustering. "
-            "Run a single config (run) or every config in a directory (batch)."
+            "Run a single config (run) or every config in a directory (batch). "
+            "Both commands are thin wrappers over the module API -- for "
+            "in-memory / notebook use, see the Python API section in README.md."
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -285,14 +287,28 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_run.add_argument(
         "--newline", default=None,
-        help="output line terminator (default: platform default; pass '\\r\\n' for C2 byte-exact)",
+        help=(
+            "output line terminator (default: platform default). "
+            "C2 byte-exact output requires a literal CRLF; "
+            "shell quoting for CRLF is shell-specific (Bash: $'\\r\\n')."
+        ),
     )
 
     p_batch = sub.add_parser("batch", help="run every config in a directory")
     p_batch.add_argument("--config-dir", required=True, help="directory of defaults.txt files")
     p_batch.add_argument("--output", required=True, help="output directory")
-    p_batch.add_argument("--encoding", default=None)
-    p_batch.add_argument("--newline", default=None)
+    p_batch.add_argument(
+        "--encoding", default=None,
+        help="output text encoding (default: platform default; pass 'gbk' for C2 byte-exact vs Java)",
+    )
+    p_batch.add_argument(
+        "--newline", default=None,
+        help=(
+            "output line terminator (default: platform default). "
+            "C2 byte-exact output requires a literal CRLF; "
+            "shell quoting for CRLF is shell-specific (Bash: $'\\r\\n')."
+        ),
+    )
 
     return parser
 

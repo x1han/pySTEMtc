@@ -102,8 +102,8 @@ No algorithm changes.  No new features.  No refactor.
 - Git tree is clean (no untracked files after `docs/08_m4_round8_final_report.md`
   deletion).
 - Wheel binary is preserved at
-  `final_acceptance/R1_brain_trajectory/_wheel/pystemtc-0.1.0-py3-none-any.whl`
-  and `dist/pystemtc-0.1.0-py3-none-any.whl`.
+  `final_acceptance/R1_brain_trajectory/_wheel/pystemtc-1.0.0-py3-none-any.whl`
+  and `dist/pystemtc-1.0.0-py3-none-any.whl`.
 - Clean-install smoke log preserved at
   `final_acceptance/R1_brain_trajectory/_smoke/clean_install_smoke.log`.
 
@@ -126,7 +126,7 @@ are now resolved in the release-closeout commit:
 | Package version mismatch (`0.1.0` wheel, `1.0.0` tag would be wrong) | `pyproject.toml` + `__init__.py:__version__` bumped to `1.0.0`; wheel rebuilt as `pystemtc-1.0.0-py3-none-any.whl`. |
 | M5 contract: FIN-B hotfix added an unauthorized `M5: ` prefix to the round-7.7 frozen literal | `M5_WARNING` reverted to the round-7.7 frozen text verbatim (no `M5: ` prefix); `test_m5_warning_text_is_the_frozen_constant` updated to match (still asserts full equality). |
 | Working tree not actually clean (`benchmarks/results/` untracked dirs; `verification/git_state.txt` stale content) | `.gitignore` extended with `benchmarks/results/` (timestamp-named runtime outputs).  `git status --porcelain` empty after the release-closeout commit. |
-| GitHub Win/Linux CI gate (release blocker) | Workflow already present (Win + Linux x Python 3.11/3.12/3.14, `pip install -e ".[dev]"`, `pytest -q`).  Release-closeout commit pushed; CI must be observed green before tagging `v1.0.0`. |
+| GitHub Win/Linux CI gate (release blocker) | Workflow already present (Win + Linux x Python 3.11/3.12/3.14, `pip install -e ".[dev]"`, `pytest -q`).  Release-closeout commit is complete **locally**. Push to GitHub and the external CI matrix are still pending release actions. The `v1.0.0` tag must NOT be created until the required CI matrix is observed green. |
 
 No algorithm changes in the release closeout.  No new features.
 No refactor.

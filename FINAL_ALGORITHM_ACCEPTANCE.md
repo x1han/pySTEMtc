@@ -61,7 +61,7 @@ single source of truth:
 ```python
 # src/pystemtc/engine.py
 M5_WARNING = (
-    "M5: normalize='none_add0' with permute_t0=True permutes the "
+    "normalize='none_add0' with permute_t0=True permutes the "
     "synthetic zero baseline together with observed time points, "
     "matching legacy STEM v1.3.14 behavior. Interpret "
     "permutation-based significance with caution."

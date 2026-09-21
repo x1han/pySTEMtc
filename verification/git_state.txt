@@ -1,21 +1,22 @@
-=== git log (HEAD 5) ===
+=== release candidate base ===
+8e52826 release closeout: v1.0.0 + restored M5 frozen literal + clean tree
 24ed3d4 FIN-B hotfix: CLI repeat wiring + M5 contract cleanup + c01/c07 Java oracles
 70d0520 docs(round-FINAL): expert review request for V1 byte-exact + CLI + M5
 c5114b7 FINAL-B: README, FINAL_ALGORITHM_ACCEPTANCE, refreshed git_state
 8d160a7 FINAL-A: writer defaults, CLI, M5 warning, R1 anchor + Java byte-exact, 281 green
-c753afa docs(round-8): Round-8 final report (writer + W1/W2/W3 + R1 evidence)
 
-=== git status --porcelain (post-release-closeout, pre-commit) ===
- M .gitignore
- M FINAL_ALGORITHM_ACCEPTANCE.md
- M README.md
- M docs/09_expert_review_request_FINAL.md
- M final_acceptance/R1_brain_trajectory/_smoke/clean_install_smoke.log
-R  final_acceptance/R1_brain_trajectory/_wheel/pystemtc-0.1.0-py3-none-any.whl -> final_acceptance/R1_brain_trajectory/_wheel/pystemtc-1.0.0-py3-none-any.whl
- M pyproject.toml
- M src/pystemtc/__init__.py
- M src/pystemtc/engine.py
- M tests/test_m5_warning.py
- M verification/git_state.txt
+At the time 8e52826 was verified:
+git status --porcelain = empty
 
-(after the release-closeout commit, git status --porcelain will be empty)
+This tracked file is a HISTORICAL release-closeout record.
+It is NOT the authority for the current working-tree state.
+For the current state run:
+    git status --porcelain
+
+Release context (informational, not a working-tree snapshot):
+- HEAD = 8e52826 is the release candidate; the v1.0.0 tag is HELD
+  until the external GitHub CI matrix (Win + Linux x Python 3.11/3.12/3.14)
+  is observed green.
+- Subsequent doc-round edits (README / CLI help / source comments /
+  acceptance docs) land as separate commits on top of 8e52826 and do not
+  modify algorithm, writer, config, or Java oracle behavior.

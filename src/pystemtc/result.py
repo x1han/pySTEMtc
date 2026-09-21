@@ -15,17 +15,13 @@ from typing import IO
 from . import __version__
 from .javaformat import format_java_double, java_double_to_string, double_to_sz
 
-# Writer discipline (round-7.3, pinned):
-# - raw LF line terminators (``\n``); comparison is decoded-exact (C1), not
-#   byte-exact (C2), so CRLF translation is not attempted.  Byte oracle
-#   assets under ``tests/golden/java_reference/**`` stay CRLF for archive
-#   fidelity, but new writer output is LF.
-# - UTF-8 encoding with ``errors='replace'``; the writer does NOT expose the
-#   errors= parameter.  Java's default Windows file.encoding (GBK on this
-#   system) maps ``-∞`` to the two-byte sequence ``\xA1\xDE`` and ``NaN`` to
-#   ``?``, so byte-exact comparison against the reference fails on the
-#   c14_log_missing row regardless; acceptance is at C1 decoded-exact
-#   level for c14, and C2 byte-exact for all other rows.
+# Writer discipline (current frozen contract):
+# - rows are emitted with logical "\n"; open(..., newline=...) controls
+#   platform / explicit newline translation.
+# - encoding=None and newline=None use platform defaults.
+# - errors="replace" is fixed internally.
+# - canonical C2 comparison explicitly uses encoding="gbk",
+#   newline="\r\n" against the JRE8 Windows oracle.
 LINE_TERMINATOR = "\n"
 
 # Algorithm-parameter keys of STEMConfig (config.py) — every field except the
