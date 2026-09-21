@@ -30,7 +30,7 @@ def best_assignments(
 
     for nrow in range(numrows):
         dcorrmax = -2.0
-        assignments = allprofiles  # :1736 initial value (NaN-all quirk)
+        assignments = allprofiles  # Compatibility contract (STEM v1.3.14 ST.java:1736): initial value is the all-profiles vector; preserved so downstream correlation assignments reference the same baseline the Java reference uses.
         for nmodelprofile in range(numprofiles):
             dcorr = correlation(
                 data[nrow], models[nmodelprofile], pma[nrow], pma[nrow]

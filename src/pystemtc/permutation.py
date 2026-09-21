@@ -2,7 +2,7 @@
 
 Ports ``generatepermutations`` / ``generatepermutationsExcept0``
 (STEM_DataSet.java:1403-1521) and ``computeaveragetally`` (:1038-1375),
-including its pinned quirks (spec 03 §1.6):
+including its pinned compatibility contracts (spec 03 §1.6):
 
 - RNG: one ``Random(9873287)`` created outside the gene loop (:1131).
   ``ballperms`` consumes no RNG; the universe-subsample path consumes

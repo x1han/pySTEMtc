@@ -100,7 +100,8 @@ def _errorcheck(main: SpotSet, rep: SpotSet, check_probes: bool) -> None:
     The different-periods variant compares the raw gene symbols only
     (ST.java:2773); the same-period variant also compares probe names
     (ST.java:2881).  Java's probe-mismatch message says "gene symbol"
-    (copy-paste quirk at ST.java:2352).
+    (compatibility contract at ST.java:2352 — text is observable in
+    reference output; preserve verbatim).
     """
     nc_main, nc_rep = main.raw_data.shape[1], rep.raw_data.shape[1]
     if nc_main != nc_rep:

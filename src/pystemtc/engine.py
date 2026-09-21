@@ -145,10 +145,10 @@ class STEM:
             input_info = {
                 "form": "stem_dataset",
                 "data_file": None,
-                # Pre-built datasets carry their repeats inside; the
-                # replicates argument is ignored on this path (documented
-                # quirk of the direct-injection form), hence no repeat file
-                # records.
+                # Direct-injection path: pre-built datasets carry their
+                # repeats inside the dataset itself; the `replicates`
+                # argument is intentionally ignored here, hence no repeat
+                # file records in `input_info`.
                 "repeat_files": [],
             }
             timing["input_read"] = 0.0
