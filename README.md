@@ -1,11 +1,12 @@
-# pystemtc
+# pySTEMtc
 
 **STEM time-course clustering for Python.**
 
-pystemtc is a Python-native implementation of the Short Time-series
-Expression Miner (STEM) time-course analysis workflow. It provides a
-scriptable Python API and a command-line interface for reproducible
-short time-series clustering without requiring the original Java GUI.
+pySTEMtc is a native Python implementation of the STEM time-course
+analysis workflow, designed for reproducible programmatic use in scripts,
+notebooks, and automated pipelines. It provides a scriptable Python API
+and a command-line interface for short time-series clustering without
+requiring the original Java GUI.
 
 The project implements the core STEM workflow end to end:
 
@@ -19,14 +20,14 @@ The project implements the core STEM workflow end to end:
 - Java-compatible result tables
 - CLI and Python API workflows
 
-pystemtc is designed for researchers who want to integrate STEM-style
+pySTEMtc is designed for researchers who want to integrate STEM-style
 analysis directly into Python, notebooks, automated pipelines, and
 reproducible computational workflows.
 
-## Why pystemtc?
+## Why pySTEMtc?
 
 The original STEM software established a widely used approach for
-clustering short biological time series. pystemtc brings that workflow
+clustering short biological time series. pySTEMtc brings that workflow
 into a modern Python environment while preserving scientifically
 important behavior.
 
@@ -40,9 +41,9 @@ Key features include:
 - **Validated** — core results are continuously checked against Java STEM v1.3.14 reference outputs
 - **Interoperable** — Java-compatible gene and profile tables can be reproduced when required
 
-## What pystemtc adds
+## What pySTEMtc adds
 
-These are engineering capabilities of pystemtc, not features of the
+These are engineering capabilities of pySTEMtc, not features of the
 original Java GUI workflow:
 
 - Native Python implementation
@@ -60,7 +61,7 @@ original Java GUI workflow:
 
 The Python implementation, programmatic API, command-line interface,
 compatibility layer, deterministic execution framework, regression suite,
-and release infrastructure are developed as part of the pystemtc project.
+and release infrastructure are developed as part of the pySTEMtc project.
 
 ## Installation
 
@@ -202,7 +203,7 @@ identified by name. Pass `spot` only when your Java config has
 
 ## Replicates
 
-pystemtc supports both STEM replicate modes:
+pySTEMtc supports both STEM replicate modes:
 
 - **Different time periods** — repeats are merged after normalization.
 - **The same time period** — repeats are merged before normalization
@@ -304,7 +305,7 @@ candidate universes; the in-memory path is used otherwise.
 
 ## Compatibility with STEM v1.3.14
 
-pystemtc uses Java STEM v1.3.14 as the reference implementation for
+pySTEMtc uses Java STEM v1.3.14 as the reference implementation for
 compatibility validation.
 
 Compatibility testing covers model profiles, assignments, expected
@@ -316,7 +317,7 @@ The compatibility suite includes decoded-content comparisons and
 byte-exact reference tests against Java-generated outputs. Real STEM
 test data are also used for end-to-end validation.
 
-Compatibility is a validation target — pystemtc itself is a native
+Compatibility is a validation target — pySTEMtc itself is a native
 Python implementation and does not require Java for normal analysis.
 
 ### Byte-exact output (C2)
@@ -425,20 +426,20 @@ pytest -q                                # 285 tests, ~8 minutes (Java reference
 
 ## Citation
 
-When citing pystemtc, please cite it as a Python-native implementation
+When citing pySTEMtc, please cite it as a native Python implementation
 of STEM time-course clustering validated against Java STEM v1.3.14.
 
 ## Scientific origin & acknowledgements
 
 STEM was originally developed by Jason Ernst and Ziv Bar-Joseph for the
-analysis of short biological time series. pystemtc implements the STEM
+analysis of short biological time series. pySTEMtc implements the STEM
 time-course methodology in Python and uses Java STEM v1.3.14 as its
 primary compatibility reference.
 
 The Python implementation, programmatic API, command-line interface,
 compatibility layer, deterministic execution framework, regression
 suite, and release infrastructure are developed as part of the
-pystemtc project.
+pySTEMtc project.
 
 ## License
 
