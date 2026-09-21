@@ -430,9 +430,11 @@ def test_writer_default_newline_matches_platform(tmp_path: Path):
             assert b"\r\n" in raw, (
                 f"{p} missing CRLF row terminator on Windows host"
             )
-            assert raw.count(b"\r\n") == raw.count(b"\n"), (
+            crlf_count = raw.count(b"\r\n")
+            lf_count = raw.count(b"\n")
+            assert crlf_count == lf_count, (
                 f"{p} has CRLF but also bare LF on Windows host "
-                f"(CRLF={raw.count(b'\\r\\n')}, LF={raw.count(b'\\n')})"
+                f"(CRLF={crlf_count}, LF={lf_count})"
             )
         else:
             # POSIX host: no CRLF should be present; LF is the only
