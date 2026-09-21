@@ -417,9 +417,16 @@ def test_writer_default_newline_matches_platform(tmp_path: Path):
             f"({expected_eol!r}); got tail {raw[-16:]!r}"
         )
         if os.linesep == "\r\n":
-            # Windows host: CRLF must appear somewhere in the stream.
+            # Windows host: every LF row terminator must be paired
+            # with a preceding CR (the canonical Java PrintWriter
+            # contract).  Count check rejects partial-CRLF outputs
+            # where some LFs are still bare.
             assert b"\r\n" in raw, (
                 f"{p} missing CRLF row terminator on Windows host"
+            )
+            assert raw.count(b"\r\n") == raw.count(b"\n"), (
+                f"{p} has CRLF but also bare LF on Windows host "
+                f"(CRLF={raw.count(b'\\r\\n')}, LF={raw.count(b'\\n')})"
             )
         else:
             # POSIX host: no CRLF should be present; LF is the only
