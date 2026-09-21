@@ -18,6 +18,7 @@ sweeps in ``test_writer_golden_c2.py``.
 from __future__ import annotations
 
 import math
+import os
 from pathlib import Path
 
 import pytest
@@ -389,10 +390,16 @@ def test_writer_uses_raw_lf(tmp_path: Path):
 
 def test_writer_default_newline_matches_platform(tmp_path: Path):
     """With ``newline=None`` (default, platform default), the writer
-    defers newline translation to Python's text I/O layer.  On
-    Windows that means CRLF (matching Java's PrintWriter.println()
-    on Windows).  This is the round-7.3 frozen discipline: ``None``
-    means "platform default", not "raw LF"."""
+    defers newline translation to Python's text I/O layer.  The
+    resulting byte stream must therefore reflect the host platform's
+    text newline: ``os.linesep`` is ``b"\\r\\n"`` on Windows and
+    ``b"\\n"`` on POSIX.  This is the round-7.3 frozen discipline:
+    ``None`` means "platform default", not "raw LF" and not
+    "CRLF on every platform".  The canonical Java C2 byte-exact
+    path (``encoding="gbk", newline="\\r\\n"``) is a separate
+    contract tested by the W3 sweeps; this test only verifies the
+    platform-default behavior.
+    """
     r = _make_result(
         genes=[_gene("A", "p1", [0],
                      [1.0, 2.0, 3.0],
@@ -401,14 +408,28 @@ def test_writer_default_newline_matches_platform(tmp_path: Path):
         time_points=["t0", "t1", "t2"],
     )
     paths = r.write_java_tables(tmp_path)  # encoding=None, newline=None
+    expected_eol = os.linesep.encode()
     for p in paths:
         raw = Path(p).read_bytes()
-        # Platform default on Windows is CRLF; row terminators in
-        # the file must therefore include CR before each LF.
-        assert b"\r\n" in raw, (
-            f"{p} missing CRLF row terminator (platform default "
-            f"should produce CRLF on Windows)"
+        # File must end with the platform EOL.
+        assert raw.endswith(expected_eol), (
+            f"{p} does not end with the platform default EOL "
+            f"({expected_eol!r}); got tail {raw[-16:]!r}"
         )
+        if os.linesep == "\r\n":
+            # Windows host: CRLF must appear somewhere in the stream.
+            assert b"\r\n" in raw, (
+                f"{p} missing CRLF row terminator on Windows host"
+            )
+        else:
+            # POSIX host: no CRLF should be present; LF is the only
+            # row terminator.
+            assert b"\r\n" not in raw, (
+                f"{p} unexpectedly contains CRLF on POSIX host"
+            )
+            assert b"\n" in raw, (
+                f"{p} missing LF row terminator on POSIX host"
+            )
 
 
 def test_writer_explicit_crlf_translates_lf_only(tmp_path: Path):
