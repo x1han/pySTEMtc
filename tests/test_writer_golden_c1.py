@@ -124,7 +124,7 @@ def _run_case(name: str, tmp_path: Path) -> tuple[list[str], list[str]]:
         clustering_method=config.clustering_method,
     )
     result = engine.fit(data_path, replicates=rep_paths)
-    paths = result.write_java_tables(tmp_path)
+    paths = result.write_java_tables(tmp_path, encoding="utf-8")
     py_gene = Path(paths[0]).read_text(encoding="utf-8").splitlines()
     py_prof = Path(paths[1]).read_text(encoding="utf-8").splitlines()
     return py_gene, py_prof

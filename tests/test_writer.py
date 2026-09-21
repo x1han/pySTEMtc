@@ -262,7 +262,13 @@ def test_genetable_signed_zero_renders_minus(tmp_path: Path):
 
 
 def test_genetable_inf_renders_infinity_glyph(tmp_path: Path):
-    """+Inf / -Inf render as U+221E with sign preserved."""
+    """+Inf / -Inf render as U+221E with sign preserved.
+
+    Pin ``encoding="utf-8"`` so the logical content round-trips
+    regardless of the runner's default encoding.  The default-encoding
+    contract is exercised separately by
+    ``test_writer_default_encoding_matches_platform``.
+    """
     r = _make_result(
         genes=[_gene("A", "p1", [0],
                      [float("inf"), -float("inf"), 0.0],
@@ -270,7 +276,7 @@ def test_genetable_inf_renders_infinity_glyph(tmp_path: Path):
         profiles=[_profile(0, [0.0, 0.0, 0.0])],
         time_points=["t0", "t1", "t2"],
     )
-    paths = r.write_java_tables(tmp_path)
+    paths = r.write_java_tables(tmp_path, encoding="utf-8")
     text = Path(paths[0]).read_text(encoding="utf-8")
     lines = text.split(LINE_TERMINATOR)
     assert lines[1] == "A\tp1\t0\t\u221e\t-\u221e\t0.00"
@@ -439,6 +445,52 @@ def test_writer_default_newline_matches_platform(tmp_path: Path):
             )
 
 
+def test_writer_default_encoding_matches_platform(tmp_path: Path):
+    """``encoding=None`` defers to the host Python's default text
+    encoding (``locale.getpreferredencoding(False)``), not necessarily
+    UTF-8.  This test pins that contract and asserts that whatever
+    encoding the platform actually picks, U+221E is encoded with
+    exactly that encoding's representation (with ``errors='replace'``
+    semantics for unrepresentable characters).
+
+    Decoding the bytes back with the same encoding (after replacing
+    undecodable '?' markers) must yield the same logical cell content
+    the formatter emitted.
+
+    This test does NOT assume UTF-8; see
+    ``test_writer_explicit_utf8_roundtrips_unicode`` for the
+    UTF-8-pinned contract.
+    """
+    # Probe the encoding Python will actually use for encoding=None
+    # on this runner.  This matches what ``open(..., "w", encoding=None)``
+    # inside ``write_java_tables`` will pick.
+    probe = tmp_path / "_probe_encoding"
+    with open(probe, "w", encoding=None) as fh:
+        platform_encoding = fh.encoding
+
+    r = _make_result(
+        genes=[_gene("A", "p1", [0],
+                     [float("inf"), -float("inf"), 0.0],
+                     [True, True, True])],
+        profiles=[_profile(0, [0.0, 0.0, 0.0])],
+        time_points=["t0", "t1", "t2"],
+    )
+    paths = r.write_java_tables(tmp_path)  # encoding=None, errors="replace"
+    raw = Path(paths[0]).read_bytes()
+    expected_inf = "\u221e".encode(platform_encoding, errors="replace")
+    expected_neg_inf = "-\u221e".encode(platform_encoding, errors="replace")
+    assert expected_inf in raw, (
+        f"inf cell must be encoded with the platform default encoding "
+        f"({platform_encoding!r}); expected bytes {expected_inf!r} not "
+        f"found in raw output"
+    )
+    assert expected_neg_inf in raw, (
+        f"-inf cell must be encoded with the platform default encoding "
+        f"({platform_encoding!r}); expected bytes {expected_neg_inf!r} "
+        f"not found in raw output"
+    )
+
+
 def test_writer_explicit_crlf_translates_lf_only(tmp_path: Path):
     """When ``newline='\\r\\n'`` is passed to the writer, Python text
     I/O translates ``\\n`` -> ``\\r\\n`` -- but the writer only ever
@@ -465,11 +517,22 @@ def test_writer_explicit_crlf_translates_lf_only(tmp_path: Path):
         assert raw.count(b"\r") == raw.count(b"\n")
 
 
-def test_writer_encodes_utf8(tmp_path: Path):
-    """U+FFFD and U+221E must round-trip as UTF-8 (not GBK / cp1252).
-    The byte oracle assets under tests/golden/java_reference/** use
-    GBK (Java's default Windows file.encoding) and so cannot be
-    compared byte-exact against this output."""
+def test_writer_explicit_utf8_roundtrips_unicode(tmp_path: Path):
+    """U+FFFD and U+221E must round-trip as UTF-8 when the caller pins
+    ``encoding="utf-8"``.
+
+    This test pins the contract that ``write_java_tables(out_dir,
+    encoding="utf-8")`` produces a file that decodes losslessly back to
+    the same logical Unicode the formatter emitted.  The C2 byte-exact
+    path (``encoding="gbk", newline="\\r\\n"``) is a separate contract
+    exercised by ``test_writer_golden_c2.py``; the default-encoding
+    contract is exercised separately by
+    ``test_writer_default_encoding_matches_platform``.
+
+    The byte oracle assets under ``tests/golden/java_reference/**`` use
+    GBK (Java's default Windows file.encoding) and so cannot be compared
+    byte-exact against this output.
+    """
     r = _make_result(
         genes=[_gene("A", "p1", [0],
                      [float("nan"), float("inf"), -float("inf")],
@@ -477,13 +540,10 @@ def test_writer_encodes_utf8(tmp_path: Path):
         profiles=[_profile(0, [0.0, 0.0, 0.0])],
         time_points=["t0", "t1", "t2"],
     )
-    paths = r.write_java_tables(tmp_path)
+    paths = r.write_java_tables(tmp_path, encoding="utf-8")
     raw = Path(paths[0]).read_bytes()
     assert b"\xef\xbf\xbd" in raw  # UTF-8 for U+FFFD
     assert b"\xe2\x88\x9e" in raw  # UTF-8 for U+221E
-    # The two-byte GBK sequence for U+221E is A1 DE -- must NOT appear
-    assert b"\xa1\xde" not in raw
-    # GBK '?' for NaN (0x3F) -- must NOT appear in place of U+FFFD
 
 
 def test_write_java_tables_returns_two_string_paths(tmp_path: Path):
